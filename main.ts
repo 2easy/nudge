@@ -8,6 +8,7 @@ import { matchHotkey } from "./src/hotkey";
 export default class TodoTxtRemindersPlugin extends Plugin {
 	settings!: TodoSettings;
 	store!: TodoStore;
+	private keepOpen = false;
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -39,6 +40,19 @@ export default class TodoTxtRemindersPlugin extends Plugin {
 		});
 
 		this.addSettingTab(new TodoSettingTab(this.app, this));
+
+		// Keep the view effectively unclosable: once it has been open, reopen
+		// it immediately if it gets closed.
+		this.registerEvent(
+			this.app.workspace.on("layout-change", () => {
+				if (
+					this.keepOpen &&
+					this.app.workspace.getLeavesOfType(VIEW_TYPE_TODO).length === 0
+				) {
+					void this.activateView();
+				}
+			})
+		);
 
 		// Configurable global shortcut to open the new-reminder window. Uses a
 		// capture-phase listener so it can override Obsidian's own binding for
@@ -73,6 +87,10 @@ export default class TodoTxtRemindersPlugin extends Plugin {
 		// Leaves are detached automatically by Obsidian on unload.
 	}
 
+	markViewOpen(): void {
+		this.keepOpen = true;
+	}
+
 	async activateView(): Promise<void> {
 		const { workspace } = this.app;
 		let leaf: WorkspaceLeaf | null =
@@ -90,14 +108,16 @@ export default class TodoTxtRemindersPlugin extends Plugin {
 	async newReminder(): Promise<void> {
 		const tasks = await this.store.readTasks();
 		const lists = deriveLists(tasks);
-		let defaultList: string | null = null;
+		// Preset to the focused view's selected project, else the default list.
+		let preset: string | null = null;
 		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_TODO)) {
 			if (leaf.view instanceof TodoView) {
-				defaultList = leaf.view.getSelectedList();
+				preset = leaf.view.getSelectedList();
 				break;
 			}
 		}
-		new TaskModal(this.app, lists, null, defaultList, async (task) => {
+		if (!preset) preset = this.settings.defaultList;
+		new TaskModal(this.app, lists, null, preset, async (task) => {
 			await this.store.addTask(task);
 			this.refreshViews();
 		}).open();

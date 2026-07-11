@@ -8,11 +8,13 @@ import {
 
 export interface TodoSettings {
 	path: string;
+	defaultList: string; // pre-selected list for new items; always pinned
 	newItemHotkey: string; // normalized hotkey, e.g. "Meta+N"; "" disables
 }
 
 export const DEFAULT_SETTINGS: TodoSettings = {
 	path: "todo.txt",
+	defaultList: "Inbox",
 	newItemHotkey: "Meta+N",
 };
 
@@ -39,6 +41,23 @@ export class TodoSettingTab extends PluginSettingTab {
 						this.plugin.settings.path = value.trim() || "todo.txt";
 						await this.plugin.saveSettings();
 						this.plugin.onPathChanged();
+					})
+			);
+
+		new Setting(containerEl)
+			.setName("Default list")
+			.setDesc(
+				"List pre-selected when creating a new reminder. Always pinned in the sidebar (second, under Today) even when it has no items."
+			)
+			.addText((text) =>
+				text
+					.setPlaceholder("Inbox")
+					.setValue(this.plugin.settings.defaultList)
+					.onChange(async (value) => {
+						this.plugin.settings.defaultList =
+							value.replace(/\s+/g, "") || "Inbox";
+						await this.plugin.saveSettings();
+						this.plugin.refreshViews();
 					})
 			);
 
