@@ -284,7 +284,9 @@ export class TodoView extends ItemView {
 		// Right-side actions.
 		const actions = row.createDiv({ cls: "todo-actions" });
 		if (t.link) {
-			const link = actions.createEl("button", { cls: "todo-action" });
+			const link = actions.createEl("button", {
+				cls: "todo-action todo-link",
+			});
 			const label = setLinkIcon(link, t.link);
 			link.setAttr("aria-label", label);
 			link.addEventListener("click", (e) => {
