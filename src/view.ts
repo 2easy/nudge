@@ -46,6 +46,7 @@ export class TodoView extends ItemView {
 	private plugin: TodoTxtRemindersPlugin;
 	private selected: string = TODAY;
 	private drag: DragState | null = null;
+	private showCompleted = false; // reveal items completed before today
 
 	private railEl!: HTMLElement;
 	private panelEl!: HTMLElement;
@@ -123,12 +124,15 @@ export class TodoView extends ItemView {
 		this.railEl.empty();
 		const defaultList = this.plugin.settings.defaultList;
 
+		// Counts show only uncompleted tasks.
 		const listCount = (name: string) =>
 			tasks.filter(
-				(rt) => rt.task.projects.includes(name) && isVisible(rt.task, today)
+				(rt) => rt.task.projects.includes(name) && !rt.task.completed
 			).length;
 
-		const todayCount = tasks.filter((rt) => inToday(rt.task, today)).length;
+		const todayCount = tasks.filter(
+			(rt) => inToday(rt.task, today) && !rt.task.completed
+		).length;
 		const stToday = this.styleFor(TODAY); // normalizes to "today"
 		this.railEl.appendChild(
 			this.railItem(
@@ -234,6 +238,19 @@ export class TodoView extends ItemView {
 		left.createEl("h3", {
 			text: isToday ? "Today" : humanizeProject(this.selected),
 		});
+
+		// Toggle to reveal/hide items completed on an earlier day.
+		const eye = left.createEl("button", { cls: "todo-eye" });
+		setIcon(eye, this.showCompleted ? "eye-off" : "eye");
+		eye.setAttr(
+			"aria-label",
+			this.showCompleted ? "Hide past completed" : "Show past completed"
+		);
+		eye.addEventListener("click", () => {
+			this.showCompleted = !this.showCompleted;
+			void this.refresh();
+		});
+
 		// Add button on every view. In Today the modal opens with no preset
 		// list so the user picks/creates one; in a project view it's preset.
 		const add = header.createEl("button", { cls: "todo-add-btn" });
@@ -243,21 +260,49 @@ export class TodoView extends ItemView {
 			this.openCreate(isToday ? null : this.selected)
 		);
 
+		// Membership of a task in the current view, ignoring completion state.
+		const belongs = (rt: RenderTask) =>
+			isToday
+				? !!rt.task.due && rt.task.due <= today
+				: rt.task.projects.includes(this.selected);
+
+		// Top group: active + completed-today, in file order.
 		const shown = isToday
 			? tasks.filter((rt) => inToday(rt.task, today))
 			: tasks.filter(
-					(rt) =>
-						rt.task.projects.includes(this.selected) &&
-						isVisible(rt.task, today)
+					(rt) => belongs(rt) && isVisible(rt.task, today)
 			  );
 
+		// Past group: completed on an earlier day, freshest completion first.
+		const past = this.showCompleted
+			? tasks
+					.filter(
+						(rt) =>
+							belongs(rt) &&
+							rt.task.completed &&
+							!!rt.task.completionDate &&
+							rt.task.completionDate < today
+					)
+					.sort((a, b) =>
+						(b.task.completionDate ?? "").localeCompare(
+							a.task.completionDate ?? ""
+						)
+					)
+			: [];
+
 		const listEl = this.panelEl.createDiv({ cls: "todo-list" });
-		if (shown.length === 0) {
+		if (shown.length === 0 && past.length === 0) {
 			listEl.createDiv({ cls: "todo-empty", text: "Nothing here." });
 			return;
 		}
 		for (const rt of shown) {
 			listEl.appendChild(this.renderItem(rt, today, isToday));
+		}
+		if (past.length) {
+			const pastEl = listEl.createDiv({ cls: "todo-past" });
+			for (const rt of past) {
+				pastEl.appendChild(this.renderItem(rt, today, isToday));
+			}
 		}
 	}
 

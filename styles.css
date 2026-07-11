@@ -97,6 +97,26 @@
 	cursor: pointer;
 }
 
+.todo-eye {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	padding: 4px;
+	cursor: pointer;
+	color: var(--text-muted);
+}
+
+.todo-eye:hover {
+	color: var(--text-normal);
+}
+
+/* Past-completed group: separated and dimmed to mark it as old. */
+.todo-past {
+	margin-top: 16px;
+	border-top: 1px solid var(--background-modifier-border);
+	opacity: 0.55;
+}
+
 .todo-empty {
 	color: var(--text-muted);
 	padding: 16px 0;
