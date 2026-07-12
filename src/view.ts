@@ -522,7 +522,8 @@ export class TodoView extends ItemView {
 		}).open();
 	}
 
-	async onClose(): Promise<void> {
+	onClose(): Promise<void> {
 		this.contentEl.empty();
+		return Promise.resolve();
 	}
 }

@@ -212,7 +212,7 @@ export class TodoStore {
 			if (si < 0) return null;
 			const [moved] = lines.splice(si, 1);
 
-			let di = this.locate(
+			const di = this.locate(
 				lines,
 				destRaw,
 				destIndex > si ? destIndex - 1 : destIndex
