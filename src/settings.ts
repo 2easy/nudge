@@ -41,6 +41,12 @@ export class TodoSettingTab extends PluginSettingTab {
 	}
 
 	display(): void {
+		this.render();
+	}
+
+	// Own render entry point so internal re-renders (after adding/removing a
+	// list style) don't call the framework's display() directly.
+	private render(): void {
 		const { containerEl } = this;
 		containerEl.empty();
 
@@ -177,7 +183,7 @@ export class TodoSettingTab extends PluginSettingTab {
 						styles.splice(i, 1);
 						await this.plugin.saveSettings();
 						this.plugin.refreshViews();
-						this.display();
+						this.render();
 					})
 			);
 		});
@@ -186,7 +192,7 @@ export class TodoSettingTab extends PluginSettingTab {
 			b.setButtonText("Add list style").onClick(async () => {
 				styles.push({ name: "", color: "#888888", icon: "list" });
 				await this.plugin.saveSettings();
-				this.display();
+				this.render();
 			})
 		);
 	}
