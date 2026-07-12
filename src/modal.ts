@@ -29,7 +29,7 @@ export interface TaskModalResult {
 export class TaskModal extends Modal {
 	private lists: string[];
 	private existing: Task | null;
-	private onSubmit: (task: Task) => void;
+	private onSubmit: (task: Task) => void | Promise<void>;
 
 	// Working field state.
 	private text: string;
@@ -48,7 +48,7 @@ export class TaskModal extends Modal {
 		lists: string[],
 		existing: Task | null,
 		defaultList: string | null,
-		onSubmit: (task: Task) => void,
+		onSubmit: (task: Task) => void | Promise<void>,
 		prefill?: Partial<Task>
 	) {
 		super(app);
@@ -297,7 +297,7 @@ export class DeleteListModal extends Modal {
 		row.addButton((b) =>
 			b
 				.setButtonText("Remove tag from items")
-				.setWarning()
+				.setDestructive()
 				.onClick(async () => {
 					await this.onRemoveTag();
 					this.close();
@@ -306,7 +306,7 @@ export class DeleteListModal extends Modal {
 		row.addButton((b) =>
 			b
 				.setButtonText("Delete all items")
-				.setWarning()
+				.setDestructive()
 				.onClick(async () => {
 					await this.onDeleteAll();
 					this.close();

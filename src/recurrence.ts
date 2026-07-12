@@ -1,7 +1,7 @@
 // Recurrence: builds/parses RRULE strings for the structured picker and
 // computes the next occurrence via the `rrule` package.
 
-import { RRule } from "rrule";
+import { RRule, type Options } from "rrule";
 
 export type RecType =
 	| "none"
@@ -91,16 +91,16 @@ export function nextOccurrence(rec: string, anchor: string): string | null {
 	try {
 		const [y, m, d] = anchor.split("-").map(Number);
 		const start = new Date(Date.UTC(y, m - 1, d));
-		const opts = RRule.parseString(rec);
+		const opts: Partial<Options> = RRule.parseString(rec);
 		opts.dtstart = start;
 		const rule = new RRule(opts);
-		const next = rule.after(start, false);
+		const next: Date | null = rule.after(start, false);
 		if (!next) return null;
 		const ny = next.getUTCFullYear();
 		const nm = String(next.getUTCMonth() + 1).padStart(2, "0");
 		const nd = String(next.getUTCDate()).padStart(2, "0");
 		return `${ny}-${nm}-${nd}`;
-	} catch (e) {
+	} catch {
 		return null;
 	}
 }

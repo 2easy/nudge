@@ -209,18 +209,20 @@ export class TodoView extends ItemView {
 			}
 		});
 		el.addEventListener("dragleave", () => el.removeClass("is-drop"));
-		el.addEventListener("drop", async (e) => {
+		el.addEventListener("drop", (e) => {
 			e.preventDefault();
 			el.removeClass("is-drop");
 			const d = this.drag;
 			this.drag = null;
 			if (!d) return;
-			if (key === TODAY) {
-				await this.plugin.store.setDueToday(d.raw, d.index);
-			} else {
-				await this.plugin.store.setProject(d.raw, d.index, key);
-			}
-			await this.refresh();
+			void (async () => {
+				if (key === TODAY) {
+					await this.plugin.store.setDueToday(d.raw, d.index);
+				} else {
+					await this.plugin.store.setProject(d.raw, d.index, key);
+				}
+				await this.refresh();
+			})();
 		});
 
 		return el;
@@ -286,9 +288,9 @@ export class TodoView extends ItemView {
 		const add = header.createEl("button", { cls: "todo-add-btn" });
 		setIcon(add, "plus");
 		add.setAttr("aria-label", "New task");
-		add.addEventListener("click", () =>
-			this.openCreate(isToday ? null : this.selected)
-		);
+		add.addEventListener("click", () => {
+			void this.openCreate(isToday ? null : this.selected);
+		});
 
 		// Membership of a task in the current view, ignoring completion state.
 		const belongs = (rt: RenderTask) =>
@@ -349,11 +351,13 @@ export class TodoView extends ItemView {
 		// Single click toggles completion instantly. Clicks on the checkbox and
 		// action buttons are ignored here (they have their own handlers). Edit
 		// is reached via the pencil button.
-		row.addEventListener("click", async (e) => {
+		row.addEventListener("click", (e) => {
 			const target = e.target as HTMLElement;
 			if (target.closest("input, button")) return;
-			await this.plugin.store.toggleComplete(rt.task.raw, rt.index);
-			await this.refresh();
+			void (async () => {
+				await this.plugin.store.toggleComplete(rt.task.raw, rt.index);
+				await this.refresh();
+			})();
 		});
 
 		// Checkbox.
@@ -362,9 +366,11 @@ export class TodoView extends ItemView {
 			cls: "todo-check",
 		});
 		cb.checked = t.completed;
-		cb.addEventListener("change", async () => {
-			await this.plugin.store.toggleComplete(rt.task.raw, rt.index);
-			await this.refresh();
+		cb.addEventListener("change", () => {
+			void (async () => {
+				await this.plugin.store.toggleComplete(rt.task.raw, rt.index);
+				await this.refresh();
+			})();
 		});
 
 		if (t.priority) {
@@ -409,12 +415,13 @@ export class TodoView extends ItemView {
 				else picker.focus();
 			});
 			picker.addEventListener("click", (e) => e.stopPropagation());
-			picker.addEventListener("change", async (e) => {
+			picker.addEventListener("change", (e) => {
 				e.stopPropagation();
-				if (picker.value) {
+				if (!picker.value) return;
+				void (async () => {
 					await this.plugin.store.setDue(t.raw, rt.index, picker.value);
 					await this.refresh();
-				}
+				})();
 			});
 		}
 		if (t.rec) {
@@ -438,14 +445,18 @@ export class TodoView extends ItemView {
 		const edit = actions.createEl("button", { cls: "todo-action todo-hover" });
 		setIcon(edit, "pencil");
 		edit.setAttr("aria-label", "Edit");
-		edit.addEventListener("click", () => this.openEdit(rt));
+		edit.addEventListener("click", () => {
+			void this.openEdit(rt);
+		});
 
 		const del = actions.createEl("button", { cls: "todo-action todo-hover" });
 		setIcon(del, "trash-2");
 		del.setAttr("aria-label", "Delete");
-		del.addEventListener("click", async () => {
-			await this.plugin.store.deleteTask(rt.task.raw, rt.index);
-			await this.refresh();
+		del.addEventListener("click", () => {
+			void (async () => {
+				await this.plugin.store.deleteTask(rt.task.raw, rt.index);
+				await this.refresh();
+			})();
 		});
 
 		// Drag to reorder.
@@ -472,7 +483,7 @@ export class TodoView extends ItemView {
 			row.removeClass("drop-before");
 			row.removeClass("drop-after");
 		});
-		row.addEventListener("drop", async (e) => {
+		row.addEventListener("drop", (e) => {
 			e.preventDefault();
 			const before = row.hasClass("drop-before");
 			row.removeClass("drop-before");
@@ -480,14 +491,16 @@ export class TodoView extends ItemView {
 			const d = this.drag;
 			this.drag = null;
 			if (!d || d.index === rt.index) return;
-			await this.plugin.store.reorder(
-				d.raw,
-				d.index,
-				rt.task.raw,
-				rt.index,
-				before
-			);
-			await this.refresh();
+			void (async () => {
+				await this.plugin.store.reorder(
+					d.raw,
+					d.index,
+					rt.task.raw,
+					rt.index,
+					before
+				);
+				await this.refresh();
+			})();
 		});
 
 		return row;

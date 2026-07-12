@@ -95,7 +95,7 @@ export class TodoSettingTab extends PluginSettingTab {
 				text.inputEl.readOnly = true;
 				text.setPlaceholder("Press keys…");
 				text.setValue(hotkeyToDisplay(this.plugin.settings.newItemHotkey));
-				text.inputEl.addEventListener("keydown", async (e) => {
+				text.inputEl.addEventListener("keydown", (e) => {
 					e.preventDefault();
 					if (e.key === "Backspace" || e.key === "Delete") {
 						this.plugin.settings.newItemHotkey = "";
@@ -104,11 +104,13 @@ export class TodoSettingTab extends PluginSettingTab {
 					} else {
 						this.plugin.settings.newItemHotkey = eventToHotkey(e);
 					}
-					await this.plugin.saveSettings();
-					text.setValue(
-						hotkeyToDisplay(this.plugin.settings.newItemHotkey)
-					);
-					text.inputEl.blur();
+					void (async () => {
+						await this.plugin.saveSettings();
+						text.setValue(
+							hotkeyToDisplay(this.plugin.settings.newItemHotkey)
+						);
+						text.inputEl.blur();
+					})();
 				});
 			});
 

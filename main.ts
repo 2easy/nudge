@@ -88,7 +88,7 @@ export default class NudgePlugin extends Plugin {
 		// capture-phase listener so it can override Obsidian's own binding for
 		// the same combo (e.g. Cmd+N → New note).
 		this.registerDomEvent(
-			document,
+			activeDocument,
 			"keydown",
 			(e: KeyboardEvent) => {
 				const hk = this.settings.newItemHotkey;
@@ -169,7 +169,7 @@ export default class NudgePlugin extends Plugin {
 			leaf = workspace.getLeaf(true);
 			await leaf.setViewState({ type: VIEW_TYPE_TODO, active: true });
 		}
-		workspace.revealLeaf(leaf);
+		await workspace.revealLeaf(leaf);
 	}
 
 	// Open the create modal from anywhere (command / ribbon), independent of
@@ -206,13 +206,13 @@ export default class NudgePlugin extends Plugin {
 	}
 
 	async loadSettings(): Promise<void> {
-		const data = await this.loadData();
+		const data = ((await this.loadData()) ?? {}) as Partial<TodoSettings>;
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
 		// Clone the styles array/objects so editing them never mutates
 		// DEFAULT_SETTINGS (which would leak across reloads).
 		this.settings.listStyles = (
-			data?.listStyles ?? DEFAULT_SETTINGS.listStyles
-		).map((s: TodoSettings["listStyles"][number]) => ({ ...s }));
+			data.listStyles ?? DEFAULT_SETTINGS.listStyles
+		).map((s) => ({ ...s }));
 	}
 
 	async saveSettings(): Promise<void> {
