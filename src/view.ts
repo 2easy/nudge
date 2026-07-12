@@ -386,8 +386,28 @@ export class TodoView extends ItemView {
 			}
 		}
 		if (t.due) {
-			const due = meta.createSpan({ cls: "todo-due", text: t.due });
+			const wrap = meta.createSpan({ cls: "todo-due-wrap" });
+			const due = wrap.createSpan({ cls: "todo-due", text: t.due });
 			if (isPastDue(t, today)) due.addClass("is-overdue");
+			// Clicking the date opens a native picker that writes back on change.
+			const picker = wrap.createEl("input", {
+				type: "date",
+				cls: "todo-due-input",
+			});
+			picker.value = t.due;
+			due.addEventListener("click", (e) => {
+				e.stopPropagation();
+				if (typeof picker.showPicker === "function") picker.showPicker();
+				else picker.focus();
+			});
+			picker.addEventListener("click", (e) => e.stopPropagation());
+			picker.addEventListener("change", async (e) => {
+				e.stopPropagation();
+				if (picker.value) {
+					await this.plugin.store.setDue(t.raw, rt.index, picker.value);
+					await this.refresh();
+				}
+			});
 		}
 		if (t.rec) {
 			const r = meta.createSpan({ cls: "todo-rec" });

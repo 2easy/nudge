@@ -220,6 +220,32 @@
 	height: 12px;
 }
 
+.todo-due-wrap {
+	position: relative;
+	display: inline-flex;
+}
+
+.todo-due {
+	cursor: pointer;
+}
+
+.todo-due:hover {
+	text-decoration: underline;
+}
+
+/* Hidden native date input, anchored so its popup appears near the date. */
+.todo-due-input {
+	position: absolute;
+	left: 0;
+	bottom: 0;
+	width: 0;
+	height: 0;
+	padding: 0;
+	border: 0;
+	opacity: 0;
+	pointer-events: none;
+}
+
 .todo-due.is-overdue {
 	color: var(--text-error);
 	font-weight: 600;

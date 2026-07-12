@@ -137,11 +137,20 @@ export class TodoStore {
 
 	// Overwrite the due date to today (used when dragging into Today).
 	async setDueToday(rawLine: string, index: number): Promise<void> {
+		await this.setDue(rawLine, index, todayStr());
+	}
+
+	// Set (or clear, with null) the due date on an item.
+	async setDue(
+		rawLine: string,
+		index: number,
+		date: string | null
+	): Promise<void> {
 		const lines = await this.readLines();
 		const i = this.locate(lines, rawLine, index);
 		if (i < 0) return;
 		const t = parseTask(lines[i]);
-		t.due = todayStr();
+		t.due = date;
 		lines[i] = serializeTask(t);
 		await this.writeLines(lines);
 	}
