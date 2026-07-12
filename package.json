@@ -1,6 +1,6 @@
 {
 	"name": "nudge",
-	"version": "0.1.2",
+	"version": "0.1.3",
 	"description": "A task manager for Obsidian, backed by a single todo.txt file.",
 	"main": "main.js",
 	"scripts": {

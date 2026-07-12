@@ -1,7 +1,7 @@
 {
 	"id": "nudge",
 	"name": "Nudge",
-	"version": "0.1.2",
+	"version": "0.1.3",
 	"minAppVersion": "1.8.0",
 	"description": "Manage tasks in a single plain-text todo.txt file, with lists, due dates, priorities, and recurrence.",
 	"author": "2easy",
