@@ -25,7 +25,6 @@ function parsePriority(raw: string | undefined): Priority {
 export default class NudgePlugin extends Plugin {
 	settings!: TodoSettings;
 	store!: TodoStore;
-	private keepOpen = false;
 
 	async onload(): Promise<void> {
 		await this.loadSettings();
@@ -71,19 +70,6 @@ export default class NudgePlugin extends Plugin {
 			this.app.workspace.onLayoutReady(() => void this.activateView());
 		}
 
-		// Keep the view effectively unclosable: once it has been open, reopen
-		// it immediately if it gets closed.
-		this.registerEvent(
-			this.app.workspace.on("layout-change", () => {
-				if (
-					this.keepOpen &&
-					this.app.workspace.getLeavesOfType(VIEW_TYPE_TODO).length === 0
-				) {
-					void this.activateView();
-				}
-			})
-		);
-
 		// Configurable global shortcut to open the new-task window. Uses a
 		// capture-phase listener so it can override Obsidian's own binding for
 		// the same combo (e.g. Cmd+N → New note).
@@ -115,10 +101,6 @@ export default class NudgePlugin extends Plugin {
 
 	onunload(): void {
 		// Leaves are detached automatically by Obsidian on unload.
-	}
-
-	markViewOpen(): void {
-		this.keepOpen = true;
 	}
 
 	async handleUri(params: ObsidianProtocolData): Promise<void> {

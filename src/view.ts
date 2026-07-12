@@ -90,9 +90,6 @@ export class TodoView extends ItemView {
 	}
 
 	async onOpen(): Promise<void> {
-		// Mark that the view is present so the plugin keeps it re-opened if
-		// closed (covers both manual opens and leaves restored on startup).
-		this.plugin.markViewOpen();
 		const root = this.contentEl;
 		root.empty();
 		root.addClass("todo-root");
