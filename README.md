@@ -1,5 +1,7 @@
 # Nudge
 
+![Nudge](screenshot.png)
+
 A task manager for Obsidian, backed by a single
 [`todo.txt`](http://todotxt.org/) file. Desktop-only (macOS). Passive by
 design — items just surface in **Today** when their due date arrives; there are
