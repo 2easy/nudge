@@ -7,7 +7,9 @@ import {
 	isPastDue,
 	isVisible,
 	normalizeListName,
+	parseTask,
 	todayStr,
+	Task,
 } from "./todotxt";
 import { TaskModal, DeleteListModal } from "./modal";
 import type { ListStyle } from "./settings";
@@ -57,6 +59,9 @@ export class TodoView extends ItemView {
 	private showCompleted = false; // reveal items completed before today
 	private todayFilterList: string | null = null; // filter Today to one list
 	private todayFilterPriority: string | null = null; // filter Today to one priority
+	private adding = false; // inline add-row is active (input focused)
+	private editing: { raw: string; index: number } | null = null; // item under inline text edit
+	private rendering = false; // true only during a synchronous re-render
 
 	private railEl!: HTMLElement;
 	private panelEl!: HTMLElement;
@@ -123,8 +128,17 @@ export class TodoView extends ItemView {
 			this.selected = TODAY;
 		}
 
-		this.renderRail(tasks, lists, today);
-		this.renderPanel(tasks, today);
+		// `rendering` is true only across this synchronous render. Emptying the
+		// panel removes any focused inline input, which fires a phantom `blur`;
+		// the blur handlers check this flag to tell that apart from a real
+		// user-initiated blur (which only ever happens while not rendering).
+		this.rendering = true;
+		try {
+			this.renderRail(tasks, lists, today);
+			this.renderPanel(tasks, today);
+		} finally {
+			this.rendering = false;
+		}
 	}
 
 	private renderRail(tasks: RenderTask[], lists: string[], today: string): void {
@@ -179,6 +193,39 @@ export class TodoView extends ItemView {
 				)
 			);
 		}
+
+		this.railEl.appendChild(this.newListTile());
+	}
+
+	// Bottom-of-rail affordance for creating a list. Since lists are purely
+	// derived from +project tags, a new list is born by seeding it with a real
+	// item: clicking opens the create modal on "New list…"; dropping an existing
+	// task opens its edit modal on "New list…" to reassign it.
+	private newListTile(): HTMLElement {
+		const el = createDiv({ cls: "todo-rail-item todo-rail-newlist" });
+		const ic = el.createSpan({ cls: "todo-rail-icon" });
+		setIcon(ic, "folder-plus");
+		el.createSpan({ cls: "todo-rail-label", text: "New list" });
+
+		el.addEventListener("click", () => void this.openCreateNewList());
+
+		el.addEventListener("dragover", (e) => {
+			if (this.drag) {
+				e.preventDefault();
+				el.addClass("is-drop");
+			}
+		});
+		el.addEventListener("dragleave", () => el.removeClass("is-drop"));
+		el.addEventListener("drop", (e) => {
+			e.preventDefault();
+			el.removeClass("is-drop");
+			const d = this.drag;
+			this.drag = null;
+			if (!d) return;
+			void this.openEditNewList(d.raw, d.index);
+		});
+
+		return el;
 	}
 
 	private railItem(
@@ -198,6 +245,8 @@ export class TodoView extends ItemView {
 
 		el.addEventListener("click", () => {
 			this.selected = key;
+			this.adding = false;
+			this.editing = null;
 			void this.refresh();
 		});
 
@@ -404,30 +453,108 @@ export class TodoView extends ItemView {
 			menu.showAtMouseEvent(e);
 		});
 
-		// Add button on every view. In Today the modal opens with no preset
-		// list so the user picks/creates one; in a project view it's preset.
+		// Add button on every view: focuses the inline add-row rather than
+		// opening a modal.
 		const add = header.createEl("button", { cls: "todo-add-btn" });
 		setIcon(add, "plus");
 		add.setAttr("aria-label", "New task");
-		add.addEventListener("click", () => {
-			const preset = isToday ? this.todayFilterList : this.selected;
-			void this.openCreate(preset, isToday);
-		});
+		add.addEventListener("click", () => this.activateAdd());
 
 		const listEl = this.panelEl.createDiv({ cls: "todo-list" });
-		if (shown.length === 0 && past.length === 0) {
-			listEl.createDiv({ cls: "todo-empty", text: "Nothing here." });
-			return;
-		}
 		for (const rt of shown) {
 			listEl.appendChild(this.renderItem(rt, today, isToday));
 		}
+		// Permanent add-row at the bottom of the active group. Doubles as the
+		// empty state, so there's no separate "Nothing here." message.
+		listEl.appendChild(this.renderAddRow());
 		if (past.length) {
 			const pastEl = listEl.createDiv({ cls: "todo-past" });
 			for (const rt of past) {
 				pastEl.appendChild(this.renderItem(rt, today, isToday));
 			}
 		}
+	}
+
+	// Enter inline-add mode and re-render so the add-row shows a focused input.
+	private activateAdd(): void {
+		this.editing = null;
+		this.adding = true;
+		void this.refresh();
+	}
+
+	// The project a new inline-added task should join, per view context.
+	private newTaskProject(): string {
+		if (this.selected !== TODAY) return this.selected;
+		return this.todayFilterList ?? this.plugin.settings.defaultList;
+	}
+
+	private renderAddRow(): HTMLElement {
+		const row = createDiv({ cls: "todo-item todo-add-row" });
+		const cb = row.createEl("input", { type: "checkbox", cls: "todo-check" });
+		cb.checked = false;
+		cb.tabIndex = -1;
+		const main = row.createDiv({ cls: "todo-item-main" });
+
+		if (!this.adding) {
+			main.createSpan({ cls: "todo-text todo-add-placeholder", text: "Add task" });
+			row.addEventListener("click", () => this.activateAdd());
+			return row;
+		}
+
+		const input = main.createEl("input", {
+			type: "text",
+			cls: "todo-text-input",
+		});
+		input.placeholder = "Add task";
+		let done = false;
+		const commit = (keepAdding: boolean): void => {
+			if (done) return;
+			const text = input.value.trim();
+			if (!text) {
+				done = true;
+				this.adding = false;
+				void this.refresh();
+				return;
+			}
+			done = true;
+			const isToday = this.selected === TODAY;
+			const task: Task = {
+				completed: false,
+				completionDate: null,
+				creationDate: null,
+				priority: null,
+				text,
+				projects: [this.newTaskProject()],
+				due: isToday ? todayStr() : null,
+				link: null,
+				rec: null,
+				raw: "",
+			};
+			void (async () => {
+				await this.plugin.store.addTask(task);
+				this.adding = keepAdding;
+				await this.refresh();
+			})();
+		};
+		input.addEventListener("keydown", (e) => {
+			if (e.key === "Enter") {
+				e.preventDefault();
+				commit(true);
+			} else if (e.key === "Escape") {
+				e.preventDefault();
+				done = true; // suppress the blur that the re-render triggers
+				this.adding = false;
+				void this.refresh();
+			}
+		});
+		input.addEventListener("blur", () => {
+			// Ignore the phantom blur fired when a re-render detaches the input;
+			// only a real user-initiated blur leaves it connected.
+			if (this.rendering || !input.isConnected) return;
+			commit(false);
+		});
+		window.setTimeout(() => input.focus(), 0);
+		return row;
 	}
 
 	private renderItem(
@@ -483,7 +610,67 @@ export class TodoView extends ItemView {
 		}
 
 		const main = row.createDiv({ cls: "todo-item-main" });
-		main.createSpan({ cls: "todo-text", text: t.text });
+		const isEditing =
+			!!this.editing &&
+			this.editing.raw === t.raw &&
+			this.editing.index === rt.index;
+		if (isEditing) {
+			const input = main.createEl("input", {
+				type: "text",
+				cls: "todo-text-input",
+			});
+			input.value = t.text;
+			let done = false;
+			const commit = (): void => {
+				if (done) return;
+				done = true;
+				const newText = input.value.trim();
+				this.editing = null;
+				if (!newText || newText === t.text) {
+					void this.refresh(); // empty or unchanged: revert
+					return;
+				}
+				void (async () => {
+					await this.plugin.store.updateTask(t.raw, rt.index, {
+						...t,
+						text: newText,
+					});
+					await this.refresh();
+				})();
+			};
+			input.addEventListener("keydown", (e) => {
+				if (e.key === "Enter") {
+					e.preventDefault();
+					commit();
+				} else if (e.key === "Escape") {
+					e.preventDefault();
+					done = true; // suppress the blur that the re-render triggers
+					this.editing = null;
+					void this.refresh();
+				}
+			});
+			input.addEventListener("blur", () => {
+				// Ignore the phantom blur fired when a re-render detaches the
+				// input; only a real user-initiated blur leaves it connected.
+				if (this.rendering || !input.isConnected) return;
+				commit();
+			});
+			window.setTimeout(() => {
+				input.focus();
+				input.select();
+			}, 0);
+		} else {
+			// Clicking the text starts inline editing; completion toggling stays
+			// on the checkbox / blank row space (stopPropagation avoids the row
+			// handler here).
+			const textSpan = main.createSpan({ cls: "todo-text", text: t.text });
+			textSpan.addEventListener("click", (e) => {
+				e.stopPropagation();
+				this.adding = false;
+				this.editing = { raw: t.raw, index: rt.index };
+				void this.refresh();
+			});
+		}
 
 		const meta = main.createDiv({ cls: "todo-meta" });
 		// In Today, show the originating list(s) to the left of the due date,
@@ -632,26 +819,42 @@ export class TodoView extends ItemView {
 		new Notice(`Copied ${visible.length} item${visible.length === 1 ? "" : "s"} to clipboard`);
 	}
 
-	private async openCreate(
-		list: string | null,
-		dueToday = false
-	): Promise<void> {
+	// New-list tile, click path: create a brand-new task with the modal opened
+	// on "New list…" and the name field focused.
+	private async openCreateNewList(): Promise<void> {
 		const tasks = await this.plugin.store.readTasks();
 		const lists = deriveLists(tasks);
-		const preset = list ?? this.plugin.settings.defaultList;
-		// Adding from Today defaults the due date to today so the item lands
-		// in this view.
-		const prefill = dueToday ? { due: todayStr() } : undefined;
 		new TaskModal(
 			this.app,
 			lists,
 			null,
-			preset,
+			null,
 			async (task) => {
 				await this.plugin.store.addTask(task);
 				await this.refresh();
 			},
-			prefill
+			undefined,
+			true
+		).open();
+	}
+
+	// New-list tile, drop path: reassign the dropped task by opening its edit
+	// modal on "New list…" so the user names the destination list.
+	private async openEditNewList(raw: string, index: number): Promise<void> {
+		const tasks = await this.plugin.store.readTasks();
+		const lists = deriveLists(tasks);
+		const task = parseTask(raw);
+		new TaskModal(
+			this.app,
+			lists,
+			task,
+			null,
+			async (updated) => {
+				await this.plugin.store.updateTask(raw, index, updated);
+				await this.refresh();
+			},
+			undefined,
+			true
 		).open();
 	}
 

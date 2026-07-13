@@ -42,6 +42,8 @@ export class TaskModal extends Modal {
 
 	private recContainer!: HTMLElement;
 	private newListSetting!: Setting;
+	private newListInput?: HTMLInputElement;
+	private startInNewList: boolean;
 
 	constructor(
 		app: App,
@@ -49,12 +51,14 @@ export class TaskModal extends Modal {
 		existing: Task | null,
 		defaultList: string | null,
 		onSubmit: (task: Task) => void | Promise<void>,
-		prefill?: Partial<Task>
+		prefill?: Partial<Task>,
+		startInNewList = false
 	) {
 		super(app);
 		this.lists = lists;
 		this.existing = existing;
 		this.onSubmit = onSubmit;
+		this.startInNewList = startInNewList;
 
 		// `prefill` seeds a *new* item's fields (e.g. from an Obsidian URI); it
 		// does not switch the modal into edit mode the way `existing` does.
@@ -76,6 +80,13 @@ export class TaskModal extends Modal {
 				? firstProject // preserve even if not yet in derived lists
 				: lists[0] ?? NEW_LIST;
 		if (this.listChoice === NEW_LIST) this.newListName = "";
+
+		// Force the "New list…" branch when opened via the new-list affordance,
+		// regardless of any existing/prefilled project.
+		if (startInNewList) {
+			this.listChoice = NEW_LIST;
+			this.newListName = "";
+		}
 	}
 
 	onOpen(): void {
@@ -110,12 +121,13 @@ export class TaskModal extends Modal {
 
 		this.newListSetting = new Setting(contentEl)
 			.setName("New list name")
-			.addText((t) =>
+			.addText((t) => {
+				this.newListInput = t.inputEl;
 				t
 					.setValue(this.newListName)
 					.setPlaceholder("ProjectName")
-					.onChange((v) => (this.newListName = v.replace(/\s+/g, "")))
-			);
+					.onChange((v) => (this.newListName = v.replace(/\s+/g, "")));
+			});
 		this.newListSetting.settingEl.toggle(this.listChoice === NEW_LIST);
 
 		new Setting(contentEl).setName("Due date").addText((t) => {
@@ -167,6 +179,12 @@ export class TaskModal extends Modal {
 					.onClick(() => this.submit())
 			)
 			.addButton((b) => b.setButtonText("Cancel").onClick(() => this.close()));
+
+		// Opened via the new-list affordance: drop the cursor straight into the
+		// list-name field.
+		if (this.startInNewList) {
+			window.setTimeout(() => this.newListInput?.focus(), 0);
+		}
 	}
 
 	private renderRecControls(): void {

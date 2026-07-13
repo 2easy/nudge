@@ -209,6 +209,54 @@
 	color: var(--text-muted);
 }
 
+/* Clicking an item's text starts inline editing. */
+.todo-text {
+	cursor: text;
+}
+
+/* Inline text input (new-item add-row and existing-item edit). Overrides
+   Obsidian's default input chrome (border, background, focus ring) so the
+   field is visually indistinguishable from a plain todo-text line —
+   !important is needed to beat the built-in input[type="text"] rules. */
+.todo-text-input,
+.todo-text-input:focus,
+.todo-text-input:hover {
+	width: 100%;
+	background: transparent !important;
+	border: none !important;
+	border-radius: 0 !important;
+	box-shadow: none !important;
+	outline: none !important;
+	padding: 0 !important;
+	margin: 0 !important;
+	height: auto;
+	font: inherit;
+	line-height: inherit;
+	color: var(--text-normal);
+}
+
+.todo-text-input::placeholder {
+	color: var(--text-faint);
+}
+
+/* Permanent add-row at the bottom of the active group. */
+.todo-add-row {
+	cursor: text;
+}
+
+.todo-add-row .todo-check {
+	pointer-events: none;
+}
+
+.todo-add-placeholder {
+	color: var(--text-faint);
+}
+
+.todo-rail-newlist {
+	color: var(--text-muted);
+	margin-top: 4px;
+}
+
 .todo-meta {
 	display: flex;
 	gap: 10px;
