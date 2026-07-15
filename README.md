@@ -42,6 +42,25 @@ See [SPEC.md](./SPEC.md) for the full design.
 3. In Obsidian: **Settings → Community plugins**, disable Restricted mode, then
    enable **Nudge**.
 
+## Releasing
+
+Releases are built and published by CI with signed [artifact
+attestations](https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations)
+(SLSA build provenance). To cut a release:
+
+```bash
+npm version minor        # or patch/major — bumps manifest.json/versions.json, commits, tags
+git push origin main --follow-tags
+```
+
+The tag push triggers `.github/workflows/release.yml`, which builds from
+source, attests `main.js`/`manifest.json`/`styles.css`, and publishes the
+release. Don't create releases locally. Verify a downloaded asset with:
+
+```bash
+gh attestation verify main.js --repo 2easy/nudge
+```
+
 ## Adding items
 
 - The **+** button in the panel header (on every view, including Today).

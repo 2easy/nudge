@@ -1,36 +1,47 @@
-name: Release Obsidian plugin
+# Release with artifact attestations: pushing a bare version tag (e.g. 0.6.0,
+# as created by `npm version`) builds the plugin from source, signs SLSA
+# build provenance for the assets, and publishes the GitHub release. Do not
+# create releases locally — this workflow owns them. Verify an asset with:
+#   gh attestation verify <file> --repo 2easy/nudge
+name: Release
 
 on:
   push:
     tags:
-      - "*"
+      - "*.*.*"
 
 permissions:
-  contents: write
+  contents: write # create the release
+  id-token: write # sign the attestation
+  attestations: write # store the attestation
 
 jobs:
-  build:
+  release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - name: Use Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: "20.x"
+          node-version: "22"
+          cache: npm
 
       - name: Build plugin
         run: |
-          npm install
+          npm ci
           npm run build
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            main.js
+            manifest.json
+            styles.css
 
       - name: Create release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          tag="${GITHUB_REF#refs/tags/}"
-
-          gh release create "$tag" \
-            --title="$tag" \
-            --draft \
-            main.js manifest.json styles.css
+          gh release create "$GITHUB_REF_NAME" main.js manifest.json styles.css \
+            --title "$GITHUB_REF_NAME" --generate-notes --verify-tag
