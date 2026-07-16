@@ -356,6 +356,60 @@
 	margin-top: 4px;
 }
 
+/* Separator above the @tag rows at the bottom of the rail. */
+.todo-rail-sep {
+	height: 1px;
+	margin: 8px 4px;
+	background: var(--background-modifier-border);
+}
+
+/* Inline @tag token inside task text. */
+.todo-inline-tag {
+	color: var(--interactive-accent);
+	cursor: pointer;
+}
+
+.todo-inline-tag:hover {
+	text-decoration: underline;
+}
+
+/* @-tag suggestion dropdown, anchored to whichever text input is active. */
+.todo-tag-suggest {
+	position: absolute;
+	z-index: 50;
+	margin-top: 2px;
+	background: var(--background-primary);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	box-shadow: var(--shadow-s);
+	overflow: hidden;
+}
+
+.todo-tag-suggest-item {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 5px 10px;
+	cursor: pointer;
+	color: var(--text-normal);
+	white-space: nowrap;
+}
+
+.todo-tag-suggest-item.is-selected,
+.todo-tag-suggest-item:hover {
+	background: var(--background-modifier-hover);
+}
+
+.todo-tag-suggest-icon {
+	display: inline-flex;
+	color: var(--text-muted);
+}
+
+.todo-tag-suggest-icon svg {
+	width: 12px;
+	height: 12px;
+}
+
 .todo-meta {
 	display: flex;
 	gap: 10px;

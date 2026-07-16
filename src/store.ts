@@ -3,7 +3,15 @@
 // atomically (see SPEC.md § Concurrency).
 
 import { App, TFile, normalizePath } from "obsidian";
-import { parseTask, serializeTask, Task, todayStr } from "./todotxt";
+import {
+	extractTaskTags,
+	foldTagsInText,
+	humanizeTag,
+	parseTask,
+	serializeTask,
+	Task,
+	todayStr,
+} from "./todotxt";
 import { nextOccurrence } from "./recurrence";
 
 export interface RenderTask {
@@ -79,6 +87,7 @@ export class TodoStore {
 
 	async addTask(t: Task): Promise<void> {
 		if (!t.creationDate) t.creationDate = todayStr();
+		t.text = foldTagsInText(t.text);
 		await this.processLines((lines) => {
 			lines.push(serializeTask(t));
 			return lines;
@@ -86,6 +95,7 @@ export class TodoStore {
 	}
 
 	async updateTask(rawLine: string, index: number, t: Task): Promise<void> {
+		t.text = foldTagsInText(t.text);
 		await this.processLines((lines) => {
 			const i = this.locate(lines, rawLine, index);
 			if (i < 0) return null;
@@ -199,6 +209,27 @@ export class TodoStore {
 		});
 	}
 
+	// Append " @tag" to an item's text, unless it already carries that tag
+	// (case/diacritic-insensitive). Used when dropping a task onto a rail tag.
+	async addTagToTask(
+		rawLine: string,
+		index: number,
+		tagDisplay: string
+	): Promise<void> {
+		await this.processLines((lines) => {
+			const i = this.locate(lines, rawLine, index);
+			if (i < 0) return null;
+			const t = parseTask(lines[i]);
+			const key = tagDisplay.toLowerCase();
+			if (extractTaskTags(t.text).some((v) => v.toLowerCase() === key)) {
+				return null;
+			}
+			t.text = `${t.text} @${tagDisplay}`.trim();
+			lines[i] = serializeTask(t);
+			return lines;
+		});
+	}
+
 	// Physically reposition a line to sit before/after a target line.
 	async reorder(
 		srcRaw: string,
@@ -236,4 +267,72 @@ export function deriveLists(tasks: RenderTask[]): string[] {
 		for (const p of task.projects) set.add(p);
 	}
 	return Array.from(set).sort((a, b) => a.localeCompare(b));
+}
+
+export interface TagInfo {
+	key: string; // lowercase ASCII identity
+	display: string; // canonical-cased ASCII spelling (most frequent variant)
+	incompleteCount: number;
+	completedCount: number;
+}
+
+// Tags are derived the same way lists are: scan every task's text for
+// @tokens. Canonical casing per tag is whichever spelling occurs most often
+// in the file (ties broken by first occurrence); existing lines are never
+// rewritten to match it. Sorted by incomplete count desc, then completed
+// count desc, then alphabetically — the order shared by the rail and the
+// suggestion dropdown.
+export function deriveTags(tasks: RenderTask[]): TagInfo[] {
+	const variantCounts = new Map<string, Map<string, number>>(); // key -> variant -> count
+	const firstSeen = new Map<string, number>(); // "key variant" -> order
+	const incomplete = new Map<string, number>();
+	const completed = new Map<string, number>();
+	let order = 0;
+
+	for (const { task } of tasks) {
+		for (const variant of extractTaskTags(task.text)) {
+			const key = variant.toLowerCase();
+			if (!variantCounts.has(key)) variantCounts.set(key, new Map());
+			const counts = variantCounts.get(key)!;
+			counts.set(variant, (counts.get(variant) ?? 0) + 1);
+			const seenKey = key + " " + variant;
+			if (!firstSeen.has(seenKey)) firstSeen.set(seenKey, order);
+			if (task.completed) completed.set(key, (completed.get(key) ?? 0) + 1);
+			else incomplete.set(key, (incomplete.get(key) ?? 0) + 1);
+		}
+		order++;
+	}
+
+	const infos: TagInfo[] = [];
+	for (const [key, counts] of variantCounts) {
+		let display = key;
+		let bestCount = -1;
+		let bestOrder = Infinity;
+		for (const [variant, count] of counts) {
+			const seenOrder = firstSeen.get(key + " " + variant) ?? Infinity;
+			if (count > bestCount || (count === bestCount && seenOrder < bestOrder)) {
+				display = variant;
+				bestCount = count;
+				bestOrder = seenOrder;
+			}
+		}
+		infos.push({
+			key,
+			display,
+			incompleteCount: incomplete.get(key) ?? 0,
+			completedCount: completed.get(key) ?? 0,
+		});
+	}
+
+	infos.sort((a, b) => {
+		if (b.incompleteCount !== a.incompleteCount) {
+			return b.incompleteCount - a.incompleteCount;
+		}
+		if (b.completedCount !== a.completedCount) {
+			return b.completedCount - a.completedCount;
+		}
+		return humanizeTag(a.display).localeCompare(humanizeTag(b.display));
+	});
+
+	return infos;
 }

@@ -166,3 +166,81 @@ export function humanizeProject(name: string): string {
 		.replace(/([a-z0-9])([A-Z])/g, "$1 $2")
 		.trim();
 }
+
+// --- @tags ----------------------------------------------------------------
+
+// A tag token: '@' followed by unicode letters/digits, starting at the
+// beginning of the text or after whitespace — so "user@example.com" is
+// never mistaken for a tag. Tags live inline in the task text (unlike
+// +project, due:, etc.) so there's nothing to strip in parseTask/
+// serializeTask; this is purely a display/derivation concern.
+export const TAG_TOKEN_RE = /(?<=^|\s)@([\p{L}\p{N}]+)/gu;
+
+// Folds a handful of common non-ASCII letters (accented Latin, Polish
+// ł/Ł, etc.) to their ASCII equivalent. Anything left over after NFKD
+// decomposition + this map is dropped, so a tag is always pure ASCII.
+const ASCII_FOLD_MAP: Record<string, string> = {
+	ł: "l", Ł: "L", đ: "d", Đ: "D", ø: "o", Ø: "O", ß: "ss",
+	æ: "ae", Æ: "AE", œ: "oe", Œ: "OE", þ: "th", Þ: "Th", ð: "d", Ð: "D",
+};
+
+export function asciiFold(s: string): string {
+	const decomposed = s.normalize("NFKD").replace(/[\u0300-\u036f]/g, "");
+	let out = "";
+	for (const ch of decomposed) {
+		out += ch.charCodeAt(0) < 128 ? ch : (ASCII_FOLD_MAP[ch] ?? "");
+	}
+	return out;
+}
+
+// Fold every @tag token found in a task's text to ASCII, in place. Applied
+// on commit (see TodoStore.addTask/updateTask) so the file only ever holds
+// ASCII tag spellings going forward; the rest of the text is untouched.
+export function foldTagsInText(text: string): string {
+	return text.replace(TAG_TOKEN_RE, (_m, word: string) => "@" + asciiFold(word));
+}
+
+// Unique tag variants (ASCII-folded, case preserved) mentioned in a task's
+// text, in first-occurrence order. Folding here too — not just on commit —
+// means a line written externally with a non-ASCII tag still counts toward
+// the right tag identity before the next save rewrites it.
+export function extractTaskTags(text: string): string[] {
+	const seen = new Set<string>();
+	const out: string[] = [];
+	for (const m of text.matchAll(TAG_TOKEN_RE)) {
+		const variant = asciiFold(m[1]);
+		const key = variant.toLowerCase();
+		if (seen.has(key)) continue;
+		seen.add(key);
+		out.push(variant);
+	}
+	return out;
+}
+
+// Split a tag's camelCase into capitalized, space-separated words for
+// display: "piotrOlchawa" -> "Piotr Olchawa". Handles acronyms too
+// ("HTMLParser" -> "HTML Parser"). Storage is unaffected — display-only.
+export function humanizeTag(tag: string): string {
+	const spaced = tag
+		.replace(/([A-Z]+)([A-Z][a-z])/g, "$1 $2")
+		.replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+		.trim();
+	return spaced
+		.split(/\s+/)
+		.filter(Boolean)
+		.map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+		.join(" ");
+}
+
+// Word-prefix match shared by @-mode search and the suggestion dropdown:
+// the query must prefix the whole tag or any of its camelCase words, so
+// "@olch" finds "piotrOlchawa" via its second word, but "@mail" does not
+// match "email" (not a word start). Case/diacritic-insensitive.
+export function tagMatchesQuery(tag: string, query: string): boolean {
+	const q = asciiFold(query).toLowerCase();
+	if (!q) return true;
+	if (tag.toLowerCase().startsWith(q)) return true;
+	return humanizeTag(tag)
+		.split(" ")
+		.some((w) => w.toLowerCase().startsWith(q));
+}

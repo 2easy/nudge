@@ -49,6 +49,60 @@ x 2026-07-11 Buy milk +Groceries due:2026-07-11
 - Completed items: prefixed `x <completion-date>` per spec, kept in the file (never deleted
   by completion — only explicit Delete removes a line).
 
+## Tags (`@context`)
+
+Any task can reference a person or context with inline `@tags` — `@matyas`, `@piotrOlchawa`,
+`@email`. Tags are the todo.txt-native `@context` convention and, like lists, are
+**dynamically derived** by scanning the file; there is no registry.
+
+- A tag is a word starting with `@`, kept **in place inside the task text** — `talk to
+  @matyas, then send documents` is stored exactly as typed. Sentence position is preserved;
+  nothing is extracted to the end of the line the way `+project`/`due:` are.
+- Tag characters: unicode letters and digits only. Anything else — comma, period, apostrophe,
+  hyphen, underscore, whitespace — terminates the tag (`@matyas,` → tag `matyas`). `@` starts
+  a tag only at the beginning of the text or after whitespace, so `piotrek@gmail.com` is never
+  a tag.
+- **ASCII folding, in-file**: non-ASCII letters in a tag token are folded to ASCII when a task
+  is committed (`omów @michał's plan` → stored as `omów @michal's plan`). Only the tag token
+  is folded; the rest of the text keeps its diacritics. The same folding also applies when
+  reading tags for identity/counting, so a line written externally with a non-ASCII tag still
+  counts correctly before the next save rewrites it.
+- **Identity** is case- and diacritic-insensitive: `@Matyas`, `@matyas`, `@matyás` are one tag.
+  The **canonical casing** (shown in the rail/suggestions, inserted by autocomplete) is the
+  most frequent variant in the file, ties broken by first occurrence; existing lines are never
+  rewritten for case. Multi-word tags are camelCase (`@piotrOlchawa`).
+- **Display**: a tag renders as an accent-colored token with camelCase split into
+  title-cased, spaced words — `@piotrOlchawa` → **@Piotr Olchawa**. Inline editing shows the
+  raw stored form. Clicking an inline tag opens its search view (below).
+
+### Tags in the rail
+
+- Tags appear below the "New list" tile, after a thin separator — at-sign icon, humanized
+  label, and a badge counting **incomplete** items carrying the tag.
+- Sort: incomplete count desc, then completed count desc, then alphabetical.
+- A tag with **zero incomplete items is hidden from the rail**, but stays findable in search
+  and in the suggestion dropdown. A tag whose lines are all deleted disappears entirely.
+- Tag rows are drop targets: dropping a task appends ` @tag` to its text if not already tagged.
+
+### Tags in search
+
+- A query starting with `@` switches search from fuzzy text matching to **tag membership**
+  (word-prefix match, case/diacritic-insensitive) instead of the usual fuzzy scoring — so
+  `@olch` finds tasks tagged `piotrOlchawa` via its second word. Results: incomplete on top in
+  file order, completed below newest-first, in the normal Results UI.
+- Clicking a tag (rail row or inline token) opens search pre-filled with `@tagname`. The
+  existing 2-character minimum applies, so a bare `@` keeps showing the previous view.
+
+### Tag suggestions
+
+Typing `@` in the add-row, inline edit, the modal's Text field, or the search box opens a
+dropdown of existing tags (word-prefix filtered as you type, e.g. `@olch` still finds
+`piotrOlchawa`). **Tab**/**Shift+Tab** and **↓**/**↑** move the selection; **Enter** or a click
+inserts the canonical tag with the caret placed immediately after it — no trailing space, so
+`@matyas,` flows naturally. Esc closes the dropdown first; a second Esc falls through to the
+input's normal Esc behavior. No match on commit simply becomes a new tag — that's the only way
+tags are created.
+
 ## Views
 
 - Custom Obsidian `ItemView` — its own pane/tab, entirely custom HTML/CSS. **Not**

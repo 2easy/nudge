@@ -2,6 +2,8 @@
 
 import { App, Modal, Setting } from "obsidian";
 import { humanizeProject, Priority, Task } from "./todotxt";
+import { TagInfo } from "./store";
+import { attachTagSuggest } from "./tagSuggest";
 import {
 	RecState,
 	RecType,
@@ -28,6 +30,7 @@ export interface TaskModalResult {
 
 export class TaskModal extends Modal {
 	private lists: string[];
+	private tags: TagInfo[];
 	private existing: Task | null;
 	private onSubmit: (task: Task) => void | Promise<void>;
 
@@ -48,6 +51,7 @@ export class TaskModal extends Modal {
 	constructor(
 		app: App,
 		lists: string[],
+		tags: TagInfo[],
 		existing: Task | null,
 		defaultList: string | null,
 		onSubmit: (task: Task) => void | Promise<void>,
@@ -56,6 +60,7 @@ export class TaskModal extends Modal {
 	) {
 		super(app);
 		this.lists = lists;
+		this.tags = tags;
 		this.existing = existing;
 		this.onSubmit = onSubmit;
 		this.startInNewList = startInNewList;
@@ -96,12 +101,13 @@ export class TaskModal extends Modal {
 			text: this.existing ? "Edit task" : "New task",
 		});
 
-		new Setting(contentEl).setName("Text").addText((t) =>
+		new Setting(contentEl).setName("Text").addText((t) => {
 			t
 				.setValue(this.text)
 				.setPlaceholder("What needs doing?")
-				.onChange((v) => (this.text = v))
-		);
+				.onChange((v) => (this.text = v));
+			attachTagSuggest(t.inputEl, t.inputEl.parentElement!, () => this.tags);
+		});
 
 		// List dropdown (existing lists + "New list…").
 		new Setting(contentEl).setName("List").addDropdown((d) => {

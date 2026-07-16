@@ -7,19 +7,25 @@ import {
 	setIcon,
 } from "obsidian";
 import type NudgePlugin from "../main";
-import { RenderTask, deriveLists } from "./store";
+import { RenderTask, TagInfo, deriveLists, deriveTags } from "./store";
 import {
+	asciiFold,
+	extractTaskTags,
 	humanizeProject,
+	humanizeTag,
 	inToday,
 	isPastDue,
 	isVisible,
 	normalizeListName,
 	parseTask,
+	TAG_TOKEN_RE,
+	tagMatchesQuery,
 	todayStr,
 	Task,
 } from "./todotxt";
 import { TaskModal, DeleteListModal } from "./modal";
 import { matchHotkey } from "./hotkey";
+import { attachTagSuggest, TagSuggestHandle } from "./tagSuggest";
 import type { ListStyle } from "./settings";
 
 export const VIEW_TYPE_TODO = "nudge-view";
@@ -103,6 +109,8 @@ export class TodoView extends ItemView {
 	private searchQuery = "";
 	private searchShowCompleted = true; // Results' own eye state (default: shown)
 	private searchJustOpened = false; // animate the widening on the next render
+	private searchTagSuggest?: TagSuggestHandle;
+	private searchTagJustCommitted = false; // suppress dropdown reopen after a tag pick
 
 	private railEl!: HTMLElement;
 	private panelEl!: HTMLElement;
@@ -167,12 +175,18 @@ export class TodoView extends ItemView {
 		);
 
 		// Esc closes search from anywhere in the view — except inside an
-		// inline add/edit input (which handles its own Esc) or a modal above.
+		// inline add/edit input (which handles its own Esc), a modal above, or
+		// while a tag-suggestion dropdown is open (first Esc closes that instead).
 		this.registerDomEvent(activeDocument, "keydown", (e: KeyboardEvent) => {
 			if (e.key !== "Escape" || !this.searchActive) return;
 			if (this.app.workspace.getActiveViewOfType(TodoView) !== this) return;
 			const target = e.target as HTMLElement | null;
-			if (target?.closest(".todo-text-input, .modal-container")) return;
+			if (
+				target?.closest(
+					".todo-text-input, .modal-container, .todo-tag-suggest-active"
+				)
+			)
+				return;
 			e.preventDefault();
 			this.closeSearch();
 			void this.refresh();
@@ -216,6 +230,28 @@ export class TodoView extends ItemView {
 		this.searchJustOpened = false;
 	}
 
+	// Opens search pre-filled to a tag's @-mode query. Used by both the rail
+	// tag rows and clicking an inline @tag token in item text.
+	private openTagSearch(tagVariant: string): void {
+		this.searchActive = true;
+		this.searchQuery = "@" + tagVariant;
+		this.searchShowCompleted = true;
+		this.searchJustOpened = true;
+		this.adding = false;
+		this.editing = null;
+		void this.refresh();
+	}
+
+	// The @-mode tag key of the current search query, or null when search
+	// isn't in tag mode — used to highlight the matching rail row.
+	private activeTagKey(): string | null {
+		if (!this.searching()) return null;
+		const q = this.searchQuery.trim();
+		if (!q.startsWith("@")) return null;
+		const key = asciiFold(q.slice(1)).toLowerCase();
+		return key || null;
+	}
+
 	async refresh(): Promise<void> {
 		let tasks: RenderTask[];
 		try {
@@ -228,6 +264,7 @@ export class TodoView extends ItemView {
 		const today = todayStr();
 		const defaultList = this.plugin.settings.defaultList;
 		const lists = deriveLists(tasks);
+		const tags = deriveTags(tasks);
 
 		// If the selected project list no longer exists, fall back to Today.
 		// The default list is always valid even when it has no items.
@@ -245,14 +282,19 @@ export class TodoView extends ItemView {
 		// user-initiated blur (which only ever happens while not rendering).
 		this.rendering = true;
 		try {
-			this.renderRail(tasks, lists, today);
-			this.renderPanel(tasks, today);
+			this.renderRail(tasks, lists, tags, today);
+			this.renderPanel(tasks, tags, today);
 		} finally {
 			this.rendering = false;
 		}
 	}
 
-	private renderRail(tasks: RenderTask[], lists: string[], today: string): void {
+	private renderRail(
+		tasks: RenderTask[],
+		lists: string[],
+		tags: TagInfo[],
+		today: string
+	): void {
 		this.railEl.empty();
 		const defaultList = this.plugin.settings.defaultList;
 
@@ -306,6 +348,52 @@ export class TodoView extends ItemView {
 		}
 
 		this.railEl.appendChild(this.newListTile());
+
+		// @tags, below a separator: incomplete-count desc, hidden once a tag
+		// has no incomplete items left (still findable in search/suggestions).
+		const visibleTags = tags.filter((t) => t.incompleteCount > 0);
+		if (visibleTags.length) {
+			this.railEl.appendChild(createDiv({ cls: "todo-rail-sep" }));
+			const activeKey = this.activeTagKey();
+			for (const info of visibleTags) {
+				this.railEl.appendChild(this.tagRailItem(info, activeKey));
+			}
+		}
+	}
+
+	private tagRailItem(info: TagInfo, activeKey: string | null): HTMLElement {
+		const el = createDiv({ cls: "todo-rail-item todo-rail-tag" });
+		if (activeKey === info.key) el.addClass("is-active");
+		const ic = el.createSpan({ cls: "todo-rail-icon" });
+		setIcon(ic, "at-sign");
+		el.createSpan({ cls: "todo-rail-label", text: humanizeTag(info.display) });
+		el.createSpan({ cls: "todo-rail-count", text: String(info.incompleteCount) });
+
+		el.addEventListener("click", () => {
+			this.openTagSearch(info.display);
+		});
+
+		// Drop target: append the tag to the dropped task's text.
+		el.addEventListener("dragover", (e) => {
+			if (this.drag) {
+				e.preventDefault();
+				el.addClass("is-drop");
+			}
+		});
+		el.addEventListener("dragleave", () => el.removeClass("is-drop"));
+		el.addEventListener("drop", (e) => {
+			e.preventDefault();
+			el.removeClass("is-drop");
+			const d = this.drag;
+			this.drag = null;
+			if (!d) return;
+			void (async () => {
+				await this.plugin.store.addTagToTask(d.raw, d.index, info.display);
+				await this.refresh();
+			})();
+		});
+
+		return el;
 	}
 
 	// Bottom-of-rail affordance for creating a list. Since lists are purely
@@ -389,7 +477,7 @@ export class TodoView extends ItemView {
 		return el;
 	}
 
-	private renderPanel(tasks: RenderTask[], today: string): void {
+	private renderPanel(tasks: RenderTask[], tags: TagInfo[], today: string): void {
 		// Capture the search input's focus/caret before the re-render destroys
 		// it, so typing survives the full rebuild without the cursor jumping.
 		const prevSearch = this.panelEl.querySelector<HTMLInputElement>(
@@ -412,7 +500,27 @@ export class TodoView extends ItemView {
 		let shown: RenderTask[];
 		let past: RenderTask[];
 
-		if (isSearch) {
+		const rawQuery = this.searchQuery.trim();
+		const tagQuery =
+			isSearch && rawQuery.startsWith("@") ? rawQuery.slice(1) : null;
+
+		if (isSearch && tagQuery !== null) {
+			// @-mode: exact tag membership (word-prefix match) rather than fuzzy
+			// text search. Incomplete on top in file order, completed below
+			// newest-first — same grouping as a normal browsing view, not score.
+			const belongs = (rt: RenderTask) =>
+				extractTaskTags(rt.task.text).some((v) => tagMatchesQuery(v, tagQuery));
+			shown = tasks.filter((rt) => belongs(rt) && !rt.task.completed);
+			past = this.searchShowCompleted
+				? tasks
+						.filter((rt) => belongs(rt) && rt.task.completed)
+						.sort((a, b) =>
+							(b.task.completionDate ?? "").localeCompare(
+								a.task.completionDate ?? ""
+							)
+						)
+				: [];
+		} else if (isSearch) {
 			// Every item in the file is a candidate, regardless of list, due
 			// date, or completion age. Corpus per item: text + cleaned link.
 			const fuzzy = prepareFuzzySearch(this.searchQuery.trim());
@@ -639,7 +747,7 @@ export class TodoView extends ItemView {
 		});
 
 		const right = header.createDiv({ cls: "todo-header-right" });
-		this.renderSearchControl(right, justOpened);
+		this.renderSearchControl(right, justOpened, tags);
 
 		// Add button on every view: focuses the inline add-row rather than
 		// opening a modal. From Results it first exits back to the previous
@@ -652,7 +760,7 @@ export class TodoView extends ItemView {
 		const listEl = this.panelEl.createDiv({ cls: "todo-list" });
 		for (const rt of shown) {
 			listEl.appendChild(
-				this.renderItem(rt, today, isSearch || isToday, hits.get(rt))
+				this.renderItem(rt, today, isSearch || isToday, tags, hits.get(rt))
 			);
 		}
 		if (isSearch) {
@@ -664,13 +772,13 @@ export class TodoView extends ItemView {
 		} else {
 			// Permanent add-row at the bottom of the active group. Doubles as
 			// the empty state, so there's no separate "Nothing here." message.
-			listEl.appendChild(this.renderAddRow());
+			listEl.appendChild(this.renderAddRow(tags));
 		}
 		if (past.length) {
 			const pastEl = listEl.createDiv({ cls: "todo-past" });
 			for (const rt of past) {
 				pastEl.appendChild(
-					this.renderItem(rt, today, isSearch || isToday, hits.get(rt))
+					this.renderItem(rt, today, isSearch || isToday, tags, hits.get(rt))
 				);
 			}
 		}
@@ -691,18 +799,31 @@ export class TodoView extends ItemView {
 				input.focus();
 				const caret = searchCaret ?? input.value.length;
 				input.setSelectionRange(caret, caret);
+				// The search input is torn down and rebuilt on every keystroke, so
+				// the tag-suggest dropdown needs an explicit resync here — its own
+				// native "input" event fired on the element that just got replaced.
+				if (this.searchTagJustCommitted) {
+					this.searchTagJustCommitted = false;
+				} else {
+					this.searchTagSuggest?.sync();
+				}
 			}
 		}
 	}
 
 	// The magnifying-glass circle that widens into the query input, plus the
 	// in-input clear button. Lives left of the + button in the header.
-	private renderSearchControl(parent: HTMLElement, justOpened: boolean): void {
+	private renderSearchControl(
+		parent: HTMLElement,
+		justOpened: boolean,
+		tags: TagInfo[]
+	): void {
 		const search = parent.createSpan({ cls: "todo-search" });
 		const icon = search.createSpan({ cls: "todo-search-icon" });
 		setIcon(icon, "search");
 
 		if (!this.searchActive) {
+			this.searchTagSuggest = undefined;
 			search.addClass("is-collapsed");
 			search.setAttr("aria-label", "Search");
 			search.addEventListener("click", () => this.openSearch());
@@ -715,6 +836,11 @@ export class TodoView extends ItemView {
 		});
 		input.placeholder = "Search";
 		input.value = this.searchQuery;
+		this.searchTagSuggest = attachTagSuggest(input, parent, () => tags, {
+			onCommit: () => {
+				this.searchTagJustCommitted = true;
+			},
+		});
 		input.addEventListener("input", () => {
 			this.searchQuery = input.value;
 			void this.refresh();
@@ -779,7 +905,7 @@ export class TodoView extends ItemView {
 		return this.todayFilterList ?? this.plugin.settings.defaultList;
 	}
 
-	private renderAddRow(): HTMLElement {
+	private renderAddRow(tags: TagInfo[]): HTMLElement {
 		const row = createDiv({ cls: "todo-item todo-add-row" });
 		const cb = row.createEl("input", { type: "checkbox", cls: "todo-check" });
 		cb.checked = false;
@@ -797,6 +923,9 @@ export class TodoView extends ItemView {
 			cls: "todo-text-input",
 		});
 		input.placeholder = "Add task";
+		// Attached before the Enter/Escape handling below, so a keystroke
+		// consumed by an open suggestion dropdown never also submits/cancels.
+		attachTagSuggest(input, main, () => tags);
 		let done = false;
 		const commit = (keepAdding: boolean): void => {
 			if (done) return;
@@ -852,6 +981,7 @@ export class TodoView extends ItemView {
 		rt: RenderTask,
 		today: string,
 		showList: boolean,
+		tags: TagInfo[],
 		search?: SearchHit
 	): HTMLElement {
 		const t = rt.task;
@@ -913,6 +1043,9 @@ export class TodoView extends ItemView {
 				cls: "todo-text-input",
 			});
 			input.value = t.text;
+			// Attached before the Enter/Escape handling below, so a keystroke
+			// consumed by an open suggestion dropdown never also submits/cancels.
+			attachTagSuggest(input, main, () => tags);
 			let done = false;
 			const commit = (): void => {
 				if (done) return;
@@ -957,22 +1090,51 @@ export class TodoView extends ItemView {
 			// on the checkbox / blank row space (stopPropagation avoids the row
 			// handler here).
 			const textSpan = main.createSpan({ cls: "todo-text" });
-			if (search && search.ranges.length) {
-				// Highlight the fuzzy-matched characters, so scattered
-				// subsequence hits don't look arbitrary.
-				let pos = 0;
-				for (const [start, end] of search.ranges) {
-					if (start > pos) textSpan.appendText(t.text.slice(pos, start));
+			const text = t.text;
+			const ranges = search?.ranges ?? [];
+
+			// Highlight the fuzzy-matched characters within [from, to), so
+			// scattered subsequence hits don't look arbitrary.
+			const appendPlain = (from: number, to: number): void => {
+				if (from >= to) return;
+				let pos = from;
+				for (const [s, e] of ranges) {
+					const cs = Math.max(s, from);
+					const ce = Math.min(e, to);
+					if (cs >= ce) continue;
+					if (cs > pos) textSpan.appendText(text.slice(pos, cs));
 					textSpan.createSpan({
 						cls: "todo-search-match",
-						text: t.text.slice(start, end),
+						text: text.slice(cs, ce),
 					});
-					pos = end;
+					pos = ce;
 				}
-				if (pos < t.text.length) textSpan.appendText(t.text.slice(pos));
-			} else {
-				textSpan.setText(t.text);
+				if (pos < to) textSpan.appendText(text.slice(pos, to));
+			};
+
+			// @tag tokens always render as capitalized, spaced, clickable
+			// tokens; a fuzzy match that overlaps one highlights the whole
+			// token rather than a partial slice of it (word-spacing means
+			// character offsets no longer line up 1:1 once split).
+			let pos = 0;
+			for (const m of text.matchAll(TAG_TOKEN_RE)) {
+				const start = m.index ?? 0;
+				const end = start + m[0].length;
+				appendPlain(pos, start);
+				const variant = asciiFold(m[1]);
+				const tagHit = ranges.some(([s, e]) => s < end && e > start);
+				const tagEl = textSpan.createSpan({
+					cls: "todo-inline-tag" + (tagHit ? " todo-search-match" : ""),
+					text: "@" + humanizeTag(variant),
+				});
+				tagEl.addEventListener("click", (e) => {
+					e.stopPropagation();
+					this.openTagSearch(variant);
+				});
+				pos = end;
 			}
+			appendPlain(pos, text.length);
+
 			textSpan.addEventListener("click", (e) => {
 				e.stopPropagation();
 				this.adding = false;
@@ -1148,9 +1310,11 @@ export class TodoView extends ItemView {
 	private async openCreateNewList(): Promise<void> {
 		const tasks = await this.plugin.store.readTasks();
 		const lists = deriveLists(tasks);
+		const tags = deriveTags(tasks);
 		new TaskModal(
 			this.app,
 			lists,
+			tags,
 			null,
 			null,
 			async (task) => {
@@ -1167,10 +1331,12 @@ export class TodoView extends ItemView {
 	private async openEditNewList(raw: string, index: number): Promise<void> {
 		const tasks = await this.plugin.store.readTasks();
 		const lists = deriveLists(tasks);
+		const tags = deriveTags(tasks);
 		const task = parseTask(raw);
 		new TaskModal(
 			this.app,
 			lists,
+			tags,
 			task,
 			null,
 			async (updated) => {
@@ -1185,7 +1351,8 @@ export class TodoView extends ItemView {
 	private async openEdit(rt: RenderTask): Promise<void> {
 		const tasks = await this.plugin.store.readTasks();
 		const lists = deriveLists(tasks);
-		new TaskModal(this.app, lists, rt.task, null, async (task) => {
+		const tags = deriveTags(tasks);
+		new TaskModal(this.app, lists, tags, rt.task, null, async (task) => {
 			await this.plugin.store.updateTask(rt.task.raw, rt.index, task);
 			await this.refresh();
 		}).open();

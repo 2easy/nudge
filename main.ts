@@ -6,7 +6,7 @@ import {
 	TAbstractFile,
 	WorkspaceLeaf,
 } from "obsidian";
-import { TodoStore, deriveLists } from "./src/store";
+import { TodoStore, deriveLists, deriveTags } from "./src/store";
 import { DEFAULT_SETTINGS, TodoSettings, TodoSettingTab } from "./src/settings";
 import { TodoView, VIEW_TYPE_TODO } from "./src/view";
 import { TaskModal } from "./src/modal";
@@ -196,8 +196,10 @@ export default class NudgePlugin extends Plugin {
 
 		const wantsModal = !!params.modal || text.length === 0;
 		if (wantsModal) {
-			const lists = deriveLists(await this.store.readTasks());
-			new TaskModal(this.app, lists, null, list, async (task) => {
+			const tasksOnDisk = await this.store.readTasks();
+			const lists = deriveLists(tasksOnDisk);
+			const tags = deriveTags(tasksOnDisk);
+			new TaskModal(this.app, lists, tags, null, list, async (task) => {
 				await this.store.addTask(task);
 				this.refreshViews();
 			}, prefill).open();
@@ -238,6 +240,7 @@ export default class NudgePlugin extends Plugin {
 	async newTask(): Promise<void> {
 		const tasks = await this.store.readTasks();
 		const lists = deriveLists(tasks);
+		const tags = deriveTags(tasks);
 		// Preset to the focused view's selected project, else the default list.
 		let preset: string | null = null;
 		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_TODO)) {
@@ -247,7 +250,7 @@ export default class NudgePlugin extends Plugin {
 			}
 		}
 		if (!preset) preset = this.settings.defaultList;
-		new TaskModal(this.app, lists, null, preset, async (task) => {
+		new TaskModal(this.app, lists, tags, null, preset, async (task) => {
 			await this.store.addTask(task);
 			this.refreshViews();
 		}).open();
