@@ -299,6 +299,29 @@ export class TodoView extends ItemView {
 		}, 500);
 	}
 
+	// FLIP the just-completed row from its old position (top group) to its
+	// new one (completed-today group): jump it back to where it used to sit
+	// via an inverted transform, then release into a transition to its
+	// natural position. `fromTop` is the old row's viewport top, captured
+	// just before the re-render tore it down.
+	private playCompletionSlide(row: HTMLElement, fromTop: number): void {
+		if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+		const dy = fromTop - row.getBoundingClientRect().top;
+		if (Math.abs(dy) < 1) return; // same render replaying: nothing moved
+		row.setCssStyles({ transition: "none", transform: `translateY(${dy}px)` });
+		void row.offsetHeight; // force layout before releasing the transition
+		window.requestAnimationFrame(() => {
+			row.setCssStyles({ transition: "transform 220ms ease-out", transform: "" });
+		});
+		row.addEventListener(
+			"transitionend",
+			() => {
+				row.setCssStyles({ transition: "" });
+			},
+			{ once: true }
+		);
+	}
+
 	async refresh(): Promise<void> {
 		let tasks: RenderTask[];
 		try {
@@ -542,6 +565,17 @@ export class TodoView extends ItemView {
 		// triggers a second, independent render shortly after (see
 		// armJustCompleted), which needs to see the same marker.
 		const justCompletedFingerprint = this.justCompletedFingerprint;
+		// Snapshot the completed row's position before it's torn down, so it
+		// can be slid back into place after the rebuild (see
+		// playCompletionSlide). Only meaningful the first time this fires;
+		// on a replay render the row is already where it landed.
+		let flipFromTop: number | null = null;
+		if (justCompletedFingerprint) {
+			const oldRow = Array.from(
+				this.panelEl.querySelectorAll<HTMLElement>(".todo-item")
+			).find((el) => el.dataset.fp === justCompletedFingerprint);
+			if (oldRow) flipFromTop = oldRow.getBoundingClientRect().top;
+		}
 
 		this.panelEl.empty();
 		const isSearch = this.searching();
@@ -869,6 +903,13 @@ export class TodoView extends ItemView {
 			}
 		}
 
+		if (flipFromTop !== null) {
+			const newRow = Array.from(
+				listEl.querySelectorAll<HTMLElement>(".todo-item")
+			).find((el) => el.dataset.fp === justCompletedFingerprint);
+			if (newRow) this.playCompletionSlide(newRow, flipFromTop);
+		}
+
 		// Restore search-input focus after re-renders triggered by typing or
 		// by interactions inside this panel — never steal it from other panes
 		// (external file edits re-render this view too).
@@ -1073,6 +1114,10 @@ export class TodoView extends ItemView {
 	): HTMLElement {
 		const t = rt.task;
 		const row = createDiv({ cls: "todo-item" });
+		// Stable identity across a full re-render, so a row can be found again
+		// in the old or new DOM by fingerprint alone (see completionFingerprint
+		// and playCompletionSlide).
+		row.dataset.fp = completionFingerprint(t);
 		if (t.completed) row.addClass("is-completed");
 		if (
 			t.completed &&
