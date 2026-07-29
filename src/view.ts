@@ -550,6 +550,10 @@ export class TodoView extends ItemView {
 		const hits = new Map<RenderTask, SearchHit>();
 		let shown: RenderTask[];
 		let past: RenderTask[];
+		// Items completed today: split out of `shown` and rendered as their own
+		// group below the incomplete items (browsing views only — search already
+		// keeps completed items separate via `past`).
+		let completedToday: RenderTask[] = [];
 
 		const rawQuery = this.searchQuery.trim();
 		const tagQuery =
@@ -620,6 +624,9 @@ export class TodoView extends ItemView {
 			const showCompletedToday = this.plugin.settings.showCompletedToday;
 
 			// Top group: active + completed-today (if shown), in file order.
+			// Split below into incomplete (stays on top) and completed-today
+			// (rendered as its own group beneath) — display-only, doesn't touch
+			// underlying order.
 			shown = isToday
 				? tasks.filter(
 						(rt) =>
@@ -631,6 +638,8 @@ export class TodoView extends ItemView {
 							belongs(rt) &&
 							isVisible(rt.task, today, showCompletedToday)
 				  );
+			completedToday = shown.filter((rt) => rt.task.completed);
+			shown = shown.filter((rt) => !rt.task.completed);
 
 			// Past group: completed on an earlier day (or today, if today's
 			// completions are hidden from the top group), freshest first.
@@ -764,7 +773,7 @@ export class TodoView extends ItemView {
 		setIcon(copyList, "clipboard-list");
 		copyList.setAttr("aria-label", "Copy list");
 		copyList.addEventListener("click", (e) => {
-			const visible = [...shown, ...past];
+			const visible = [...shown, ...completedToday, ...past];
 			if (visible.length === 0) {
 				new Notice("Nothing to copy");
 				return;
@@ -831,6 +840,18 @@ export class TodoView extends ItemView {
 			// Permanent add-row at the bottom of the active group. Doubles as
 			// the empty state, so there's no separate "Nothing here." message.
 			listEl.appendChild(this.renderAddRow(tags));
+		}
+		for (const rt of completedToday) {
+			listEl.appendChild(
+				this.renderItem(
+					rt,
+					today,
+					isSearch || isToday,
+					tags,
+					hits.get(rt),
+					justCompletedFingerprint
+				)
+			);
 		}
 		if (past.length) {
 			const pastEl = listEl.createDiv({ cls: "todo-past" });
