@@ -199,6 +199,24 @@ export class TodoStore {
 		});
 	}
 
+	// Rewrite a +project tag to a new name on every item that has it (items,
+	// completed or not, are kept — only the tag spelling changes).
+	async renameProjectTag(oldName: string, newName: string): Promise<void> {
+		await this.processLines((lines) => {
+			let changed = false;
+			for (let i = 0; i < lines.length; i++) {
+				if (!lines[i].trim()) continue;
+				const t = parseTask(lines[i]);
+				if (t.projects.includes(oldName)) {
+					t.projects = t.projects.map((p) => (p === oldName ? newName : p));
+					lines[i] = serializeTask(t);
+					changed = true;
+				}
+			}
+			return changed ? lines : null;
+		});
+	}
+
 	// Permanently delete every line belonging to a +project tag.
 	async deleteListItems(project: string): Promise<void> {
 		await this.processLines((lines) => {

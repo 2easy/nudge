@@ -1,7 +1,7 @@
 // Structured create/edit modal. Users never type todo.txt syntax directly.
 
 import { App, Modal, Setting } from "obsidian";
-import { humanizeProject, Priority, Task } from "./todotxt";
+import { humanizeProject, normalizeListName, Priority, Task } from "./todotxt";
 import { TagInfo } from "./store";
 import { attachTagSuggest } from "./tagSuggest";
 import {
@@ -282,6 +282,93 @@ export class TaskModal extends Modal {
 		};
 
 		void this.onSubmit(task);
+		this.close();
+	}
+
+	private flash(msg: string): void {
+		let el = this.contentEl.querySelector<HTMLElement>(".todo-modal-error");
+		if (!el) {
+			el = this.contentEl.createDiv({ cls: "todo-modal-error" });
+		}
+		el.setText(msg);
+	}
+
+	onClose(): void {
+		this.contentEl.empty();
+	}
+}
+
+// Rename a list: rewrites its +project tag on every item (completed and
+// incomplete). Blocks on a case/space-insensitive collision with a
+// *different* existing list; a pure re-casing of the same list (e.g.
+// "chores" -> "Chores") is allowed since it's excluded from that check.
+export class RenameListModal extends Modal {
+	private name: string;
+
+	constructor(
+		app: App,
+		private listName: string,
+		private lists: string[],
+		private onRename: (newName: string) => void | Promise<void>
+	) {
+		super(app);
+		this.name = humanizeProject(listName);
+	}
+
+	onOpen(): void {
+		const { contentEl } = this;
+		contentEl.empty();
+		contentEl.createEl("h2", { text: "Rename list" });
+
+		let inputEl!: HTMLInputElement;
+		new Setting(contentEl).setName("Name").addText((t) => {
+			inputEl = t.inputEl;
+			t
+				.setPlaceholder("List name")
+				.setValue(this.name)
+				.onChange((v) => (this.name = v));
+		});
+
+		new Setting(contentEl)
+			.addButton((b) =>
+				b
+					.setButtonText("Save")
+					.setCta()
+					.onClick(() => this.submit())
+			)
+			.addButton((b) => b.setButtonText("Cancel").onClick(() => this.close()));
+
+		contentEl.addEventListener("keydown", (e) => {
+			if (e.key !== "Enter" || e.isComposing) return;
+			e.preventDefault();
+			this.submit();
+		});
+
+		window.setTimeout(() => {
+			inputEl.focus();
+			inputEl.select();
+		}, 0);
+	}
+
+	private submit(): void {
+		const newName = this.name.replace(/\s+/g, "");
+		if (!newName) {
+			this.flash("Name is required.");
+			return;
+		}
+		if (newName === this.listName) {
+			this.close();
+			return;
+		}
+		const key = normalizeListName(newName);
+		const collides = this.lists.some(
+			(l) => l !== this.listName && normalizeListName(l) === key
+		);
+		if (collides) {
+			this.flash(`A list named "${humanizeProject(newName)}" already exists.`);
+			return;
+		}
+		void this.onRename(newName);
 		this.close();
 	}
 

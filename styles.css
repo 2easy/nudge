@@ -202,6 +202,8 @@
 	cursor: pointer;
 	color: var(--text-faint);
 	opacity: 0.6;
+	/* Set apart from the list-level actions (pencil/copy/trash) to its left. */
+	margin-left: 8px;
 }
 
 .todo-eye:hover {
@@ -210,6 +212,24 @@
 }
 
 .todo-eye svg {
+	width: 15px;
+	height: 15px;
+}
+
+.todo-edit-list {
+	display: inline-flex;
+	align-items: center;
+	cursor: pointer;
+	color: var(--text-faint);
+	opacity: 0.6;
+}
+
+.todo-edit-list:hover {
+	color: var(--text-muted);
+	opacity: 1;
+}
+
+.todo-edit-list svg {
 	width: 15px;
 	height: 15px;
 }

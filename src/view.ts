@@ -23,7 +23,7 @@ import {
 	todayStr,
 	Task,
 } from "./todotxt";
-import { TaskModal, DeleteListModal } from "./modal";
+import { TaskModal, DeleteListModal, RenameListModal } from "./modal";
 import { matchHotkey } from "./hotkey";
 import { attachTagSuggest, TagSuggestHandle } from "./tagSuggest";
 import type { ListStyle } from "./settings";
@@ -728,26 +728,19 @@ export class TodoView extends ItemView {
 					: humanizeProject(this.selected),
 		});
 
-		// Toggle to reveal/hide completed items. Results keeps its own toggle
-		// state (default: shown), independent of the browsing views'.
-		const eyeOn = isSearch ? this.searchShowCompleted : this.showCompleted;
-		const eye = left.createSpan({ cls: "todo-eye" });
-		setIcon(eye, eyeOn ? "eye-off" : "eye");
-		eye.setAttr(
-			"aria-label",
-			isSearch
-				? eyeOn
-					? "Hide completed"
-					: "Show completed"
-				: eyeOn
-					? "Hide past completed"
-					: "Show past completed"
-		);
-		eye.addEventListener("click", () => {
-			if (isSearch) this.searchShowCompleted = !this.searchShowCompleted;
-			else this.showCompleted = !this.showCompleted;
-			void this.refresh();
-		});
+		// Rename-list icon (project lists only; Today/Results can't be renamed).
+		if (!isSearch && !isToday) {
+			const list = this.selected;
+			const lists = deriveLists(tasks);
+			const rename = left.createSpan({ cls: "todo-edit-list" });
+			setIcon(rename, "pencil");
+			rename.setAttr("aria-label", "Rename list");
+			rename.addEventListener("click", () => {
+				new RenameListModal(this.app, list, lists, (newName) =>
+					this.renameList(list, newName)
+				).open();
+			});
+		}
 
 		// Active list filter for Today: click anywhere on it to clear.
 		if (!isSearch && isToday && this.todayFilterList) {
@@ -783,28 +776,6 @@ export class TodoView extends ItemView {
 			pill.addEventListener("click", () => {
 				this.todayFilterPriority = null;
 				void this.refresh();
-			});
-		}
-
-		// Delete-list icon (project lists only; Today/Results can't be deleted).
-		if (!isSearch && !isToday) {
-			const list = this.selected;
-			const del = left.createSpan({ cls: "todo-trash" });
-			setIcon(del, "trash-2");
-			del.setAttr("aria-label", "Delete list");
-			del.addEventListener("click", () => {
-				new DeleteListModal(
-					this.app,
-					list,
-					async () => {
-						await this.plugin.store.removeProjectTag(list);
-						await this.refresh();
-					},
-					async () => {
-						await this.plugin.store.deleteListItems(list);
-						await this.refresh();
-					}
-				).open();
 			});
 		}
 
@@ -844,6 +815,51 @@ export class TodoView extends ItemView {
 				})
 			);
 			menu.showAtMouseEvent(e);
+		});
+
+		// Delete-list icon (project lists only; Today/Results can't be deleted).
+		if (!isSearch && !isToday) {
+			const list = this.selected;
+			const del = left.createSpan({ cls: "todo-trash" });
+			setIcon(del, "trash-2");
+			del.setAttr("aria-label", "Delete list");
+			del.addEventListener("click", () => {
+				new DeleteListModal(
+					this.app,
+					list,
+					async () => {
+						await this.plugin.store.removeProjectTag(list);
+						await this.refresh();
+					},
+					async () => {
+						await this.plugin.store.deleteListItems(list);
+						await this.refresh();
+					}
+				).open();
+			});
+		}
+
+		// Toggle to reveal/hide completed items. Results keeps its own toggle
+		// state (default: shown), independent of the browsing views'. Pushed
+		// off to the side (margin in CSS) to set it apart from the list-level
+		// actions (pencil/copy/trash) to its left.
+		const eyeOn = isSearch ? this.searchShowCompleted : this.showCompleted;
+		const eye = left.createSpan({ cls: "todo-eye" });
+		setIcon(eye, eyeOn ? "eye-off" : "eye");
+		eye.setAttr(
+			"aria-label",
+			isSearch
+				? eyeOn
+					? "Hide completed"
+					: "Show completed"
+				: eyeOn
+					? "Hide past completed"
+					: "Show past completed"
+		);
+		eye.addEventListener("click", () => {
+			if (isSearch) this.searchShowCompleted = !this.searchShowCompleted;
+			else this.showCompleted = !this.showCompleted;
+			void this.refresh();
 		});
 
 		const right = header.createDiv({ cls: "todo-header-right" });
@@ -1450,6 +1466,35 @@ export class TodoView extends ItemView {
 	): void {
 		void navigator.clipboard.writeText(visible.map(format).join("\n"));
 		new Notice(`Copied ${visible.length} item${visible.length === 1 ? "" : "s"} to clipboard`);
+	}
+
+	// Rewrite a list's +project tag everywhere, then carry its identity
+	// (custom style, default-list pointer, active Today filter, current
+	// selection) over to the new name so nothing silently goes stale.
+	private async renameList(oldName: string, newName: string): Promise<void> {
+		// Set before the write below: it triggers the vault's "modify" event,
+		// which races an independent refresh() in against the rest of this
+		// method (see main.ts's vault.on("modify") handler). That refresh sees
+		// `tasks` already carrying the new tag, so `selected`/`todayFilterList`
+		// must already point at `newName` too, or the "list no longer exists"
+		// fallback (refresh()'s guard against a deleted selection) trips and
+		// resets selected to Today before we get a chance to update it here.
+		if (this.todayFilterList === oldName) this.todayFilterList = newName;
+		if (this.selected === oldName) this.selected = newName;
+
+		await this.plugin.store.renameProjectTag(oldName, newName);
+
+		const key = normalizeListName(oldName);
+		const style = this.plugin.settings.listStyles.find(
+			(s) => s.name && normalizeListName(s.name) === key
+		);
+		if (style) style.name = newName;
+		if (this.plugin.settings.defaultList === oldName) {
+			this.plugin.settings.defaultList = newName;
+		}
+		await this.plugin.saveSettings();
+
+		await this.refresh();
 	}
 
 	// New-list tile, click path: create a brand-new task with the modal opened
