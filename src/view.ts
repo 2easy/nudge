@@ -299,12 +299,14 @@ export class TodoView extends ItemView {
 		}, 500);
 	}
 
-	// FLIP the just-completed row from its old position (top group) to its
-	// new one (completed-today group): jump it back to where it used to sit
-	// via an inverted transform, then release into a transition to its
-	// natural position. `fromTop` is the old row's viewport top, captured
-	// just before the re-render tore it down.
-	private playCompletionSlide(row: HTMLElement, fromTop: number): void {
+	// FLIP a row from its old position to wherever it landed after the
+	// re-render: jump it back to where it used to sit via an inverted
+	// transform, then release into a transition to its natural position.
+	// Used for the completed row itself and for any row that shifts as a
+	// side effect (e.g. the completed-today group above it growing or
+	// shrinking). `fromTop` is the row's old viewport top, captured just
+	// before the re-render tore the previous DOM down.
+	private playFlipSlide(row: HTMLElement, fromTop: number): void {
 		if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
 		const dy = fromTop - row.getBoundingClientRect().top;
 		if (Math.abs(dy) < 1) return; // same render replaying: nothing moved
@@ -565,16 +567,20 @@ export class TodoView extends ItemView {
 		// triggers a second, independent render shortly after (see
 		// armJustCompleted), which needs to see the same marker.
 		const justCompletedFingerprint = this.justCompletedFingerprint;
-		// Snapshot the completed row's position before it's torn down, so it
-		// can be slid back into place after the rebuild (see
-		// playCompletionSlide). Only meaningful the first time this fires;
-		// on a replay render the row is already where it landed.
-		let flipFromTop: number | null = null;
+		// Snapshot every row's position before it's torn down, keyed by
+		// fingerprint, so any row that ends up somewhere else — the completed
+		// row itself, plus any row that shifts as a side effect of the
+		// completed-today group above it growing or shrinking — can be slid
+		// into its new spot after the rebuild (see playFlipSlide). Only
+		// meaningful the first time this fires; on a replay render every row
+		// is already where it landed, so all deltas come out to ~0.
+		let flipFromTop: Map<string, number> | null = null;
 		if (justCompletedFingerprint) {
-			const oldRow = Array.from(
-				this.panelEl.querySelectorAll<HTMLElement>(".todo-item")
-			).find((el) => el.dataset.fp === justCompletedFingerprint);
-			if (oldRow) flipFromTop = oldRow.getBoundingClientRect().top;
+			flipFromTop = new Map();
+			this.panelEl.querySelectorAll<HTMLElement>(".todo-item").forEach((el) => {
+				const fp = el.dataset.fp;
+				if (fp) flipFromTop!.set(fp, el.getBoundingClientRect().top);
+			});
 		}
 
 		this.panelEl.empty();
@@ -807,7 +813,7 @@ export class TodoView extends ItemView {
 		setIcon(copyList, "clipboard-list");
 		copyList.setAttr("aria-label", "Copy list");
 		copyList.addEventListener("click", (e) => {
-			const visible = [...shown, ...completedToday, ...past];
+			const visible = [...completedToday, ...shown, ...past];
 			if (visible.length === 0) {
 				new Notice("Nothing to copy");
 				return;
@@ -852,6 +858,24 @@ export class TodoView extends ItemView {
 		add.addEventListener("click", () => this.activateAdd());
 
 		const listEl = this.panelEl.createDiv({ cls: "todo-list" });
+		// Completed-today group renders first, above the incomplete items: a
+		// freshly completed row then only ever has to travel up to reach it,
+		// never down through the rest of the active list.
+		if (completedToday.length) {
+			const completedTodayEl = listEl.createDiv({ cls: "todo-completed-today" });
+			for (const rt of completedToday) {
+				completedTodayEl.appendChild(
+					this.renderItem(
+						rt,
+						today,
+						isSearch || isToday,
+						tags,
+						hits.get(rt),
+						justCompletedFingerprint
+					)
+				);
+			}
+		}
 		for (const rt of shown) {
 			listEl.appendChild(
 				this.renderItem(
@@ -875,18 +899,6 @@ export class TodoView extends ItemView {
 			// the empty state, so there's no separate "Nothing here." message.
 			listEl.appendChild(this.renderAddRow(tags));
 		}
-		for (const rt of completedToday) {
-			listEl.appendChild(
-				this.renderItem(
-					rt,
-					today,
-					isSearch || isToday,
-					tags,
-					hits.get(rt),
-					justCompletedFingerprint
-				)
-			);
-		}
 		if (past.length) {
 			const pastEl = listEl.createDiv({ cls: "todo-past" });
 			for (const rt of past) {
@@ -903,11 +915,13 @@ export class TodoView extends ItemView {
 			}
 		}
 
-		if (flipFromTop !== null) {
-			const newRow = Array.from(
-				listEl.querySelectorAll<HTMLElement>(".todo-item")
-			).find((el) => el.dataset.fp === justCompletedFingerprint);
-			if (newRow) this.playCompletionSlide(newRow, flipFromTop);
+		if (flipFromTop) {
+			const rects = flipFromTop;
+			listEl.querySelectorAll<HTMLElement>(".todo-item").forEach((row) => {
+				const fp = row.dataset.fp;
+				const oldTop = fp ? rects.get(fp) : undefined;
+				if (oldTop !== undefined) this.playFlipSlide(row, oldTop);
+			});
 		}
 
 		// Restore search-input focus after re-renders triggered by typing or
@@ -1116,7 +1130,7 @@ export class TodoView extends ItemView {
 		const row = createDiv({ cls: "todo-item" });
 		// Stable identity across a full re-render, so a row can be found again
 		// in the old or new DOM by fingerprint alone (see completionFingerprint
-		// and playCompletionSlide).
+		// and playFlipSlide).
 		row.dataset.fp = completionFingerprint(t);
 		if (t.completed) row.addClass("is-completed");
 		if (

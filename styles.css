@@ -250,6 +250,12 @@
 	height: 15px;
 }
 
+/* Completed-today group: a little breathing room so it doesn't read as
+   part of the active list below it. */
+.todo-completed-today {
+	margin-bottom: 8px;
+}
+
 /* Past-completed group: separated and dimmed to mark it as old. */
 .todo-past {
 	margin-top: 16px;
