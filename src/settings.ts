@@ -1,5 +1,6 @@
-import { App, PluginSettingTab, Setting, getIconIds } from "obsidian";
+import { App, PluginSettingTab, Setting } from "obsidian";
 import type NudgePlugin from "../main";
+import { IconPickerModal } from "./iconPicker";
 import {
 	eventToHotkey,
 	hotkeyToDisplay,
@@ -203,14 +204,6 @@ export class TodoSettingTab extends PluginSettingTab {
 			)
 			.setHeading();
 
-		// Shared datalist of icon ids for the icon inputs.
-		const datalistId = "todo-icon-datalist";
-		const datalist = containerEl.createEl("datalist");
-		datalist.id = datalistId;
-		for (const id of getIconIds()) {
-			datalist.createEl("option", { value: id });
-		}
-
 		const styles = this.plugin.settings.listStyles;
 		styles.forEach((style, i) => {
 			const row = new Setting(containerEl);
@@ -231,21 +224,23 @@ export class TodoSettingTab extends PluginSettingTab {
 					this.plugin.refreshViews();
 				})
 			);
-			row.addText((t) => {
-				t.setPlaceholder("icon (e.g. star)")
-					.setValue(style.icon)
-					.onChange(async (v) => {
-						style.icon = v.trim();
-						preview.setIcon(style.icon || "list");
-						await this.plugin.saveSettings();
-						this.plugin.refreshViews();
-					});
-				t.inputEl.setAttribute("list", datalistId);
-			});
-			let preview!: import("obsidian").ExtraButtonComponent;
 			row.addExtraButton((b) => {
-				preview = b;
-				b.setIcon(style.icon || "list").setTooltip("Icon preview");
+				const show = (icon: string) => {
+					// setIcon appends; clear first so picks don't stack.
+					b.extraSettingsEl.empty();
+					b.setIcon(icon).setTooltip(`Icon: ${icon} — click to change`);
+				};
+				show(style.icon || "list");
+				b.onClick(() => {
+					new IconPickerModal(this.app, (icon) => {
+						style.icon = icon;
+						show(icon);
+						void (async () => {
+							await this.plugin.saveSettings();
+							this.plugin.refreshViews();
+						})();
+					}).open();
+				});
 			});
 			row.addExtraButton((b) =>
 				b

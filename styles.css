@@ -641,3 +641,17 @@
 	color: var(--text-error);
 	margin-top: 8px;
 }
+
+/* Icon picker (settings → list styles) */
+.todo-icon-option {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+}
+
+.todo-icon-option-glyph {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--text-muted);
+}
