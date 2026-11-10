@@ -113,6 +113,9 @@ function completionFingerprint(t: Task): string {
 }
 
 export class TodoView extends ItemView {
+	// Let Obsidian navigate away from this main-area tab via the file explorer.
+	navigation = true;
+
 	private plugin: NudgePlugin;
 	private selected: string = TODAY;
 	private drag: DragState | null = null;

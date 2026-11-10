@@ -107,6 +107,8 @@ tags are created.
 
 - Custom Obsidian `ItemView` — its own pane/tab, entirely custom HTML/CSS. **Not**
   markdown-block-rendered; `todo.txt` is storage only, never viewed as a rendered note.
+- Follows standard tab navigation: opening Nudge focuses its existing tab or
+  reuses an eligible tab; file explorer clicks can navigate away.
 - Layout: sidebar-within-the-pane. Left rail = list of lists. Right = items in the
   selected list.
 - Sidebar order: **"Today" pinned first**, then all other lists **alphabetically**.

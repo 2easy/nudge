@@ -228,7 +228,7 @@ export default class NudgePlugin extends Plugin {
 		let leaf: WorkspaceLeaf | null =
 			workspace.getLeavesOfType(VIEW_TYPE_TODO)[0] ?? null;
 		if (!leaf) {
-			leaf = workspace.getLeaf(true);
+			leaf = workspace.getLeaf(false);
 			await leaf.setViewState({ type: VIEW_TYPE_TODO, active: true });
 		}
 		await workspace.revealLeaf(leaf);
