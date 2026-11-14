@@ -1,7 +1,14 @@
 // Structured create/edit modal. Users never type todo.txt syntax directly.
 
 import { App, Modal, Setting } from "obsidian";
-import { humanizeProject, normalizeListName, Priority, Task } from "./todotxt";
+import {
+	humanizeProject,
+	normalizeListName,
+	primaryProject,
+	Priority,
+	replaceProject,
+	Task,
+} from "./todotxt";
 import { TagInfo } from "./store";
 import { attachTagSuggest } from "./tagSuggest";
 import {
@@ -54,6 +61,9 @@ export class TaskModal extends Modal {
 	private newListSetting!: Setting;
 	private newListInput?: HTMLInputElement;
 	private startInNewList: boolean;
+	// For a task in several lists: the one the List dropdown stands for. The
+	// others are kept untouched on save. null for new or untagged tasks.
+	private primaryList: string | null;
 
 	constructor(
 		app: App,
@@ -63,7 +73,10 @@ export class TaskModal extends Modal {
 		defaultList: string | null,
 		onSubmit: (task: Task) => void | Promise<void>,
 		prefill?: Partial<Task>,
-		startInNewList = false
+		startInNewList = false,
+		// The list the task was opened from, so that list is the one edited
+		// when the task belongs to several.
+		editList: string | null = null
 	) {
 		super(app);
 		this.lists = lists;
@@ -86,8 +99,11 @@ export class TaskModal extends Modal {
 
 		const untagged = !!existing && existing.projects.length === 0;
 		this.untaggedList = untagged ? defaultList ?? "" : null;
+		this.primaryList = existing
+			? primaryProject(existing.projects, editList)
+			: null;
 		const firstProject =
-			existing?.projects[0] ?? prefill?.projects?.[0] ?? defaultList ?? "";
+			this.primaryList ?? prefill?.projects?.[0] ?? defaultList ?? "";
 		this.listChoice = untagged
 			? NO_LIST
 			: firstProject && lists.includes(firstProject)
@@ -121,7 +137,17 @@ export class TaskModal extends Modal {
 		});
 
 		// List dropdown (existing lists + "New list…").
-		new Setting(contentEl).setName("List").addDropdown((d) => {
+		const listSetting = new Setting(contentEl).setName("List");
+		// A task in several lists: say which others it stays in.
+		const others = (this.existing?.projects ?? []).filter(
+			(p) => p !== this.primaryList
+		);
+		if (others.length) {
+			listSetting.setDesc(
+				`Also in ${others.map(humanizeProject).join(", ")}. Changing the list here leaves that unchanged.`
+			);
+		}
+		listSetting.addDropdown((d) => {
 			const known = new Set(this.lists);
 			// Untagged task: one entry for the default list that keeps it
 			// untagged, in place of the default list's own (tagging) entry.
@@ -300,7 +326,16 @@ export class TaskModal extends Modal {
 			creationDate: this.existing?.creationDate ?? null,
 			priority: this.priority,
 			text,
-			projects: this.listChoice === NO_LIST ? [] : [project],
+			// Only the list shown in the dropdown changes; a task's other
+			// +project tags are kept.
+			projects:
+				this.listChoice === NO_LIST
+					? []
+					: replaceProject(
+							this.existing?.projects ?? [],
+							project,
+							this.primaryList
+					  ),
 			due: this.due,
 			link: this.link,
 			rec: buildRRule(this.rec),

@@ -765,7 +765,9 @@ export class TodoView extends ItemView {
 				if (key === TODAY) {
 					await this.plugin.store.setDueToday(d.raw, d.index);
 				} else {
-					await this.plugin.store.setProject(d.raw, d.index, key);
+					// Dragged out of a list view: that list is the tag to swap.
+					const from = this.searching() ? null : this.getSelectedList();
+					await this.plugin.store.setProject(d.raw, d.index, key, from);
 				}
 				await this.refresh();
 			})();
@@ -1903,7 +1905,8 @@ export class TodoView extends ItemView {
 				await this.refresh();
 			},
 			undefined,
-			true
+			true,
+			this.searching() ? null : this.getSelectedList()
 		).open();
 	}
 
@@ -1913,10 +1916,22 @@ export class TodoView extends ItemView {
 		const tags = deriveTags(tasks);
 		// The default list is passed so an untagged task shows under its name.
 		const defaultList = this.plugin.settings.defaultList || null;
-		new TaskModal(this.app, lists, tags, rt.task, defaultList, async (task) => {
-			await this.plugin.store.updateTask(rt.task.raw, rt.index, task);
-			await this.refresh();
-		}).open();
+		// The list being viewed, so a task in several lists edits that one.
+		const editList = this.searching() ? null : this.getSelectedList();
+		new TaskModal(
+			this.app,
+			lists,
+			tags,
+			rt.task,
+			defaultList,
+			async (task) => {
+				await this.plugin.store.updateTask(rt.task.raw, rt.index, task);
+				await this.refresh();
+			},
+			undefined,
+			false,
+			editList
+		).open();
 	}
 
 	onClose(): Promise<void> {

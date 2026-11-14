@@ -9,6 +9,7 @@ import {
 	isPurgeable,
 	humanizeTag,
 	parseTask,
+	replaceProject,
 	serializeTask,
 	Task,
 	todayStr,
@@ -229,13 +230,20 @@ export class TodoStore {
 		return result;
 	}
 
-	// Rewrite the item's project membership to a single destination list.
-	async setProject(rawLine: string, index: number, project: string): Promise<void> {
+	// Move the item to a destination list. For an item in several lists only
+	// one tag is swapped — the list it was dragged `from` when it is in it,
+	// else its first — and the rest are kept.
+	async setProject(
+		rawLine: string,
+		index: number,
+		project: string,
+		from?: string | null
+	): Promise<void> {
 		await this.processLines((lines) => {
 			const i = this.locate(lines, rawLine, index);
 			if (i < 0) return null;
 			const t = parseTask(lines[i]);
-			t.projects = [project];
+			t.projects = replaceProject(t.projects, project, from);
 			lines[i] = serializeTask(t);
 			return lines;
 		});

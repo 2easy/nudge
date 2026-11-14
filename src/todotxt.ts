@@ -349,6 +349,34 @@ export function inList(t: Task, list: string, defaultList: string): boolean {
 	return t.projects.includes(list);
 }
 
+// Which of a task's lists an edit or a drag is acting on: the list it was
+// opened or dragged from when the task is in it, else its first tag.
+export function primaryProject(
+	projects: string[],
+	from?: string | null
+): string | null {
+	if (projects.length === 0) return null;
+	return from && projects.includes(from) ? from : projects[0];
+}
+
+// Move a task to list `to` without dropping its other +project tags: only
+// the primary one (see primaryProject) is swapped, in place. Duplicates
+// that the swap would create are removed.
+export function replaceProject(
+	projects: string[],
+	to: string,
+	from?: string | null
+): string[] {
+	const primary = primaryProject(projects, from);
+	if (primary === null) return [to];
+	const out: string[] = [];
+	for (const p of projects) {
+		const next = p === primary ? to : p;
+		if (!out.includes(next)) out.push(next);
+	}
+	return out;
+}
+
 // Completed items are visible only on the day they were completed (unless
 // showCompletedToday is off, hiding them immediately); the day after, they
 // disappear from all views regardless.

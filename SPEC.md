@@ -223,6 +223,11 @@ All fields are entered through a structured modal — no hand-typed todo.txt syn
 | Recurrence | structured picker (see below) | `rec:<RRULE>` |
 
 - **Edit** opens the same modal, pre-filled with the item's current values.
+- **Items in several lists**: a line may carry more than one `+project` tag and then shows
+  in each of those lists. The List dropdown stands for one of them — the list the item
+  was opened from, else its first tag — and saving swaps only that tag, in place; the
+  others are kept, and the field notes which other lists the item stays in. The modal
+  cannot add or remove extra tags.
 - **Delete** is immediate — no confirmation dialog. An **Undo** notice (below) covers a
   misclick; beyond that, recovery relies on Obsidian's file history / version control,
   since deletion is just a line removal in a plain text file.
@@ -284,7 +289,9 @@ has focus adds the clipboard's plain text as tasks:
 Since file line order = display order everywhere, all drags are implemented as direct
 line-position/content edits in `todo.txt`:
 
-- **Drag between lists**: rewrites the item's `+project` tag to the destination list.
+- **Drag between lists**: rewrites the item's `+project` tag to the destination list. For
+  an item in several lists only one tag is swapped — the list it was dragged from, or its
+  first tag when dragged from Today, Upcoming or Results — and the rest are kept.
 - **Drag into Today**: overwrites `due:` to today's date. Destructive — original due date
   is not preserved separately.
 - **Drag to reorder within a list, or within Today**: physically repositions the line in
