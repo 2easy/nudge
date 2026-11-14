@@ -18,19 +18,26 @@ import {
 	isPastDue,
 	isVisible,
 	normalizeListName,
+	parsePaste,
 	parseTask,
 	TAG_TOKEN_RE,
 	tagMatchesQuery,
 	todayStr,
 	Task,
 } from "./todotxt";
-import { TaskModal, DeleteListModal, RenameListModal } from "./modal";
+import {
+	ConfirmPasteModal,
+	TaskModal,
+	DeleteListModal,
+	RenameListModal,
+} from "./modal";
 import { matchHotkey } from "./hotkey";
 import { attachTagSuggest, TagSuggestHandle } from "./tagSuggest";
 import type { ListStyle } from "./settings";
 
 export const VIEW_TYPE_TODO = "nudge-view";
 const TODAY = " today"; // sentinel; sorts/handles distinctly from real lists
+const PASTE_CONFIRM_ABOVE = 10; // pasting more lines than this asks first
 
 // Brand marks shown in place of the generic link icon for recognized services.
 const GITHUB_SVG =
@@ -215,7 +222,112 @@ export class TodoView extends ItemView {
 			void this.refresh();
 		});
 
+		// Paste with the view focused (and no field being typed into) adds the
+		// clipboard text as tasks in the current list.
+		//
+		// The shortcut is caught as a keydown and the clipboard read directly:
+		// with nothing editable focused the browser has no selection to paste
+		// into, so it may never dispatch a "paste" event for Cmd/Ctrl+V. The
+		// "paste" listener stays for the cases where one does arrive (e.g. the
+		// Edit menu); preventing the keydown's default keeps the two from both
+		// firing for one keypress.
+		const ownsPaste = (target: EventTarget | null): boolean => {
+			if (this.app.workspace.getActiveViewOfType(TodoView) !== this)
+				return false;
+			if (this.searchActive) return false; // Results has no list to add to
+			const el = target instanceof HTMLElement ? target : null;
+			// A real text field or a modal owns its own paste.
+			if (el?.closest("input, textarea, select, [contenteditable]"))
+				return false;
+			return !activeDocument.querySelector(".modal-container");
+		};
+		this.registerDomEvent(
+			activeDocument,
+			"keydown",
+			(e: KeyboardEvent) => {
+				if (e.key.toLowerCase() !== "v" || e.repeat) return;
+				if (!(e.metaKey || e.ctrlKey) || e.shiftKey || e.altKey) return;
+				if (!ownsPaste(e.target)) return;
+				e.preventDefault();
+				void (async () => {
+					let text = "";
+					try {
+						text = await navigator.clipboard.readText();
+					} catch (err) {
+						console.error("Nudge: could not read the clipboard", err);
+						new Notice("Could not read the clipboard.");
+						return;
+					}
+					if (text.trim()) await this.handlePaste(text);
+				})();
+			},
+			{ capture: true }
+		);
+		this.registerDomEvent(activeDocument, "paste", (e: ClipboardEvent) => {
+			if (!ownsPaste(e.target)) return;
+			const text = e.clipboardData?.getData("text/plain") ?? "";
+			if (!text.trim()) return;
+			e.preventDefault();
+			void this.handlePaste(text);
+		});
+
 		await this.refresh();
+	}
+
+	// Pasted text → tasks in the current list. A lone URL opens the new-task
+	// form with the link filled in; anything else adds one task per line.
+	private async handlePaste(raw: string): Promise<void> {
+		const parsed = parsePaste(raw);
+		const project = this.newTaskProject();
+		const due = this.selected === TODAY ? todayStr() : null;
+
+		if (parsed.kind === "link") {
+			const tasks = await this.plugin.store.readTasks();
+			new TaskModal(
+				this.app,
+				deriveLists(tasks),
+				deriveTags(tasks),
+				null,
+				project,
+				async (task) => {
+					await this.plugin.store.addTask(task);
+					await this.refresh();
+				},
+				{ link: parsed.url, due }
+			).open();
+			return;
+		}
+
+		const items = parsed.items;
+		if (!items.length) return;
+		const add = async (): Promise<void> => {
+			await this.plugin.store.addTasks(
+				items.map((it) => ({
+					completed: false,
+					completionDate: null,
+					creationDate: null, // stamped by the store
+					priority: null,
+					text: it.text,
+					projects: [project],
+					due,
+					link: it.link,
+					rec: null,
+					raw: "",
+				}))
+			);
+			await this.refresh();
+			if (items.length > 1) new Notice(`Added ${items.length} tasks`);
+		};
+		if (items.length > PASTE_CONFIRM_ABOVE) {
+			new ConfirmPasteModal(
+				this.app,
+				items.length,
+				humanizeProject(project),
+				add
+			).open();
+			return;
+		}
+		await add();
 	}
 
 	// True when search is active with a long-enough query to filter by.

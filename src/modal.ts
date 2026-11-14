@@ -324,6 +324,43 @@ export class TaskModal extends Modal {
 	}
 }
 
+// Confirm before a large paste creates many tasks at once.
+export class ConfirmPasteModal extends Modal {
+	constructor(
+		app: App,
+		private count: number,
+		private listLabel: string,
+		private onConfirm: () => void | Promise<void>
+	) {
+		super(app);
+	}
+
+	onOpen(): void {
+		const { contentEl } = this;
+		contentEl.empty();
+		contentEl.createEl("h2", { text: `Add ${this.count} tasks?` });
+		contentEl.createEl("p", {
+			cls: "setting-item-description",
+			text: `The pasted text has ${this.count} lines. Each one becomes a task in ${this.listLabel}.`,
+		});
+		new Setting(contentEl)
+			.addButton((b) => b.setButtonText("Cancel").onClick(() => this.close()))
+			.addButton((b) =>
+				b
+					.setButtonText(`Add ${this.count} tasks`)
+					.setCta()
+					.onClick(async () => {
+						await this.onConfirm();
+						this.close();
+					})
+			);
+	}
+
+	onClose(): void {
+		this.contentEl.empty();
+	}
+}
+
 // Rename a list: rewrites its +project tag on every item (completed and
 // incomplete). Blocks on a case/space-insensitive collision with a
 // *different* existing list; a pure re-casing of the same list (e.g.
