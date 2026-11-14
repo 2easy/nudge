@@ -211,6 +211,26 @@ All fields are entered through a structured modal — no hand-typed todo.txt syn
   not the completion timestamp — so completing something late doesn't drift the recurring
   schedule forward.
 
+## Paste to Add
+
+Pasting (Cmd/Ctrl+V) while the Nudge view is the active pane and no text field or modal
+has focus adds the clipboard's plain text as tasks:
+
+- **Destination**: the selected list. In Today it is the active list filter, else the
+  default list, and the task is due today — the same rule as the inline add row. Paste is
+  ignored while search is open, since Results has no list.
+- **A lone URL** opens the new-task form with the link field filled in, nothing is
+  created until it is submitted.
+- **Anything else** creates tasks directly, **one per non-empty line**, appended to the
+  file in one write.
+- **Links inside text**: a line with exactly one `http(s)` URL has it moved to the task's
+  `link:` field; a markdown link `[title](url)` keeps `title` in the text. A line with
+  several URLs is kept as pasted. A line that is only a URL (in a multi-line paste) uses
+  the URL without its scheme as the text.
+- **List markers** at the start of a line are stripped: `- `, `* `, `+ `, `1. `, `1) `,
+  and a following checkbox `[ ] ` / `[x] ` (a checked box still creates an open task).
+- **More than 10 lines** asks for confirmation before creating anything.
+
 ## Drag and Drop
 
 Since file line order = display order everywhere, all drags are implemented as direct

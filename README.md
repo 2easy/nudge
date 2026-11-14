@@ -16,6 +16,8 @@ See [SPEC.md](./SPEC.md) for the full design.
   Tasks with no `+project` tag (e.g. added by another todo.txt tool) show up here.
 - Optional clean-up of old completed tasks: pick a retention period (1 week to 1 year)
   and they are removed from the file automatically. Off by default.
+- Paste to add: with the view focused, pasting text adds one task per line to the
+  current list; pasting a link opens the new-task form with the link filled in.
 - Structured create/edit modal — no hand-typed todo.txt syntax. Fields: text,
   list, due date, priority, link, and a recurrence picker (stored as `rec:<RRULE>`).
 - Completing a recurring item spawns its next occurrence, anchored on the

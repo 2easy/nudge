@@ -95,6 +95,19 @@ export class TodoStore {
 		});
 	}
 
+	// Append several tasks in one atomic write (e.g. a multi-line paste).
+	async addTasks(ts: Task[]): Promise<void> {
+		if (!ts.length) return;
+		for (const t of ts) {
+			if (!t.creationDate) t.creationDate = todayStr();
+			t.text = foldTagsInText(t.text);
+		}
+		await this.processLines((lines) => {
+			for (const t of ts) lines.push(serializeTask(t));
+			return lines;
+		});
+	}
+
 	async updateTask(rawLine: string, index: number, t: Task): Promise<void> {
 		t.text = foldTagsInText(t.text);
 		await this.processLines((lines) => {

@@ -111,6 +111,68 @@ export function serializeTask(t: Task): string {
 	return parts.join(" ");
 }
 
+// --- paste ---------------------------------------------------------------
+
+export interface PastedItem {
+	text: string;
+	link: string | null;
+}
+
+// What a paste into the view should do: open the new-task form with a link
+// filled in (the paste was nothing but one URL), or add tasks directly.
+export type PasteResult =
+	| { kind: "link"; url: string }
+	| { kind: "tasks"; items: PastedItem[] };
+
+const URL_RE = /https?:\/\/[^\s<>]+/g;
+const MD_LINK_RE = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+// Leading list marker: "- ", "* ", "+ ", "1. ", "1) ", optionally followed by
+// a checkbox ("[ ] ", "[x] ").
+const LIST_MARKER_RE = /^(?:[-*+]|\d+[.)])(?:\s+|$)(?:\[[ xX]\](?:\s+|$))?/;
+
+// A URL copied mid-sentence often drags trailing punctuation with it.
+function trimUrl(u: string): string {
+	return u.replace(/[.,;:!?'")\]]+$/, "");
+}
+
+// One pasted line → one task. A single link in the line moves to the link
+// field (a markdown link keeps its title as text); with several links the
+// text is left as pasted, since a task holds only one link.
+function parsePastedLine(line: string): PastedItem | null {
+	let text = line.trim().replace(LIST_MARKER_RE, "").trim();
+	if (!text) return null;
+	let link: string | null = null;
+
+	const md = [...text.matchAll(MD_LINK_RE)];
+	const bare = text.replace(MD_LINK_RE, " ").match(URL_RE) ?? [];
+	if (md.length === 1 && bare.length === 0) {
+		link = md[0][2];
+		text = text.replace(md[0][0], md[0][1]);
+	} else if (md.length === 0 && bare.length === 1) {
+		link = trimUrl(bare[0]);
+		// Remove the raw match, so punctuation that trailed the URL goes too.
+		text = text.replace(bare[0], " ");
+	}
+	text = text.replace(/\s+/g, " ").trim();
+	// A line that was only a URL still needs text: use the URL, minus scheme.
+	if (!text && link) text = link.replace(/^https?:\/\//, "").replace(/\/$/, "");
+	return text ? { text, link } : null;
+}
+
+export function parsePaste(raw: string): PasteResult {
+	const lines = raw.split(/\r?\n/).filter((l) => l.trim().length > 0);
+	if (lines.length === 1) {
+		const only = lines[0].trim();
+		if (/^https?:\/\/\S+$/.test(only)) return { kind: "link", url: only };
+	}
+	const items: PastedItem[] = [];
+	for (const l of lines) {
+		const item = parsePastedLine(l);
+		if (item) items.push(item);
+	}
+	return { kind: "tasks", items };
+}
+
 // --- date helpers -------------------------------------------------------
 
 export function todayStr(): string {
