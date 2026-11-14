@@ -128,11 +128,29 @@ tags are created.
   settings on the Nudge tab.
 - Layout: sidebar-within-the-pane. Left rail = list of lists. Right = items in the
   selected list.
-- Sidebar order: **"Today" pinned first**, then all other lists **alphabetically**.
+- Sidebar order: **"Today" pinned first**, then **"Upcoming"**, the default list, then all
+  other lists **alphabetically**.
 - **Today view**: automatically populated filter, `due: <= today AND not done`. No manual
   add. Items whose due date is in the past render with the date **highlighted in red**
   (still shown, not hidden). An item in Today is still physically a member of its original
   `+project` list — Today is a filter, not a separate storage location.
+- **Upcoming view**: pinned second, under Today. A filter of open items with
+  `due: > today`, within a configurable range — next 7, **14 (default)** or 30 days, or
+  every future date. The rail badge counts the same set. The same setting can **hide
+  Upcoming** altogether: no rail entry, and a view left on Upcoming falls back to Today.
+  - Sorted by due date, soonest first, under **one heading per day** ("Tomorrow", then
+    e.g. "Mon 16 Nov"); only days with items get a heading. Items sharing a day keep
+    file order. This is the one view not in file order, so rows cannot be reordered here.
+  - Rows otherwise behave like list rows (toggle, inline edit, due picker, delete, drag
+    onto a rail list or Today). List tags navigate to that list; priority pills are inert.
+    Completing an item removes it from the view at once; there is no completed section.
+  - **Adding**: the add row and the **+** button open the new-task form with the due date
+    set to tomorrow and the default list selected. Pasting one task or a link opens the
+    same form prefilled; pasting several lines adds them directly, due tomorrow.
+  - Upcoming is not a drop target: it has no single date to assign.
+  - A footer states the range and links to the setting that changes or hides it.
+  - Recurring items appear once, as the occurrence stored in the file; later repeats are
+    not previewed.
 - **Completed items**: hidden from view on the day *after* they were completed. On the day
   they're completed, they remain visible in their list (and Today, if applicable),
   struck-through — gives a sense of daily progress before disappearing.
@@ -220,7 +238,8 @@ has focus adds the clipboard's plain text as tasks:
 
 - **Destination**: the selected list. In Today it is the active list filter, else the
   default list, and the task is due today — the same rule as the inline add row. Paste is
-  ignored while search is open, since Results has no list.
+  ignored while search is open, since Results has no list. In Upcoming see that view's
+  adding rule.
 - **A lone URL** opens the new-task form with the link field filled in, nothing is
   created until it is submitted.
 - **Anything else** creates tasks directly, **one per non-empty line**, appended to the

@@ -9,13 +9,16 @@ import {
 import type NudgePlugin from "../main";
 import { RenderTask, TagInfo, deriveLists, deriveTags } from "./store";
 import {
+	addDays,
 	asciiFold,
+	dayHeading,
 	extractTaskTags,
 	humanizeProject,
 	humanizeTag,
 	inList,
 	inToday,
 	isPastDue,
+	isUpcoming,
 	isVisible,
 	normalizeListName,
 	parsePaste,
@@ -24,6 +27,8 @@ import {
 	tagMatchesQuery,
 	todayStr,
 	Task,
+	upcomingEnd,
+	upcomingRange,
 } from "./todotxt";
 import {
 	ConfirmPasteModal,
@@ -37,6 +42,7 @@ import type { ListStyle } from "./settings";
 
 export const VIEW_TYPE_TODO = "nudge-view";
 const TODAY = " today"; // sentinel; sorts/handles distinctly from real lists
+const UPCOMING = " upcoming"; // sentinel for the future-dated filter view
 const PASTE_CONFIRM_ABOVE = 10; // pasting more lines than this asks first
 
 // Brand marks shown in place of the generic link icon for recognized services.
@@ -164,7 +170,9 @@ export class TodoView extends ItemView {
 
 	// The selected project list, or null when Today is selected.
 	getSelectedList(): string | null {
-		return this.selected === TODAY ? null : this.selected;
+		return this.selected === TODAY || this.selected === UPCOMING
+			? null
+			: this.selected;
 	}
 
 	// Configured color/icon override for a list, matched ignoring spaces/case.
@@ -282,7 +290,21 @@ export class TodoView extends ItemView {
 	private async handlePaste(raw: string): Promise<void> {
 		const parsed = parsePaste(raw);
 		const project = this.newTaskProject();
-		const due = this.selected === TODAY ? todayStr() : null;
+		const inUpcoming = this.selected === UPCOMING;
+		const due =
+			this.selected === TODAY
+				? todayStr()
+				: inUpcoming
+					? addDays(todayStr(), 1)
+					: null;
+
+		// Upcoming: a single pasted task goes through the form (due tomorrow)
+		// so its date can be adjusted, like the + button there.
+		if (inUpcoming && parsed.kind === "tasks" && parsed.items.length === 1) {
+			const [it] = parsed.items;
+			await this.openNewUpcoming({ text: it.text, link: it.link });
+			return;
+		}
 
 		if (parsed.kind === "link") {
 			const tasks = await this.plugin.store.readTasks();
@@ -457,10 +479,20 @@ export class TodoView extends ItemView {
 		const lists = deriveLists(tasks);
 		const tags = deriveTags(tasks);
 
+		// Upcoming can be hidden in settings; don't stay on a view with no
+		// rail entry.
+		if (
+			this.selected === UPCOMING &&
+			upcomingRange(this.plugin.settings.upcomingRange).hidden
+		) {
+			this.selected = TODAY;
+		}
+
 		// If the selected project list no longer exists, fall back to Today.
 		// The default list is always valid even when it has no items.
 		if (
 			this.selected !== TODAY &&
+			this.selected !== UPCOMING &&
 			this.selected !== defaultList &&
 			!lists.includes(this.selected)
 		) {
@@ -510,7 +542,23 @@ export class TodoView extends ItemView {
 			)
 		);
 
-		// Default list pinned second, always shown (even with zero items).
+		// Upcoming: open tasks due after today, within the configured range.
+		// Left out entirely when hidden in settings.
+		if (!upcomingRange(this.plugin.settings.upcomingRange).hidden) {
+			const end = upcomingEnd(today, this.plugin.settings.upcomingRange);
+			const stUpcoming = this.styleFor(UPCOMING); // normalizes to "upcoming"
+			this.railEl.appendChild(
+				this.railItem(
+					UPCOMING,
+					"Upcoming",
+					tasks.filter((rt) => isUpcoming(rt.task, today, end)).length,
+					stUpcoming?.icon || "calendar-days",
+					stUpcoming?.color
+				)
+			);
+		}
+
+		// Default list pinned next, always shown (even with zero items).
 		if (defaultList) {
 			const st = this.styleFor(defaultList);
 			this.railEl.appendChild(
@@ -642,6 +690,9 @@ export class TodoView extends ItemView {
 		});
 
 		// Drop target: onto a list rewrites project; onto Today sets due=today.
+		// Upcoming is a filter with no single date to assign, so it takes no
+		// drops.
+		if (key === UPCOMING) return el;
 		el.addEventListener("dragover", (e) => {
 			if (this.drag) {
 				e.preventDefault();
@@ -705,6 +756,9 @@ export class TodoView extends ItemView {
 		this.panelEl.empty();
 		const isSearch = this.searching();
 		const isToday = this.selected === TODAY;
+		const upcomingView = !isSearch && this.selected === UPCOMING;
+		// Views that are filters, not a single project list.
+		const isFilterView = isSearch || isToday || upcomingView;
 
 		const hits = new Map<RenderTask, SearchHit>();
 		let shown: RenderTask[];
@@ -765,6 +819,14 @@ export class TodoView extends ItemView {
 			past = this.searchShowCompleted
 				? scored.filter((h) => h.rt.task.completed).map((h) => h.rt)
 				: [];
+		} else if (upcomingView) {
+			// Open tasks due after today, soonest first. The sort is stable, so
+			// tasks sharing a day keep their file order.
+			const end = upcomingEnd(today, this.plugin.settings.upcomingRange);
+			shown = tasks
+				.filter((rt) => isUpcoming(rt.task, today, end))
+				.sort((a, b) => (a.task.due ?? "").localeCompare(b.task.due ?? ""));
+			past = [];
 		} else {
 			// Membership of a task in the current view, ignoring completion.
 			const defaultList = this.plugin.settings.defaultList;
@@ -833,7 +895,9 @@ export class TodoView extends ItemView {
 			? "search"
 			: isToday
 				? "calendar-clock"
-				: this.selected === this.plugin.settings.defaultList
+				: upcomingView
+					? "calendar-days"
+					: this.selected === this.plugin.settings.defaultList
 					? "inbox"
 					: "list";
 		const icon = left.createSpan({ cls: "todo-header-icon" });
@@ -845,11 +909,13 @@ export class TodoView extends ItemView {
 				? "Results"
 				: isToday
 					? "Today"
-					: humanizeProject(this.selected),
+					: upcomingView
+						? "Upcoming"
+						: humanizeProject(this.selected),
 		});
 
-		// Rename-list icon (project lists only; Today/Results can't be renamed).
-		if (!isSearch && !isToday) {
+		// Rename-list icon (project lists only; filter views can't be renamed).
+		if (!isFilterView) {
 			const list = this.selected;
 			const lists = deriveLists(tasks);
 			const rename = left.createSpan({ cls: "todo-edit-list" });
@@ -937,8 +1003,8 @@ export class TodoView extends ItemView {
 			menu.showAtMouseEvent(e);
 		});
 
-		// Delete-list icon (project lists only; Today/Results can't be deleted).
-		if (!isSearch && !isToday) {
+		// Delete-list icon (project lists only; filter views can't be deleted).
+		if (!isFilterView) {
 			const list = this.selected;
 			const del = left.createSpan({ cls: "todo-trash" });
 			setIcon(del, "trash-2");
@@ -966,24 +1032,27 @@ export class TodoView extends ItemView {
 		// state (default: shown), independent of the browsing views'. Pushed
 		// off to the side (margin in CSS) to set it apart from the list-level
 		// actions (pencil/copy/trash) to its left.
-		const eyeOn = isSearch ? this.searchShowCompleted : this.showCompleted;
-		const eye = left.createSpan({ cls: "todo-eye" });
-		setIcon(eye, eyeOn ? "eye-off" : "eye");
-		eye.setAttr(
-			"aria-label",
-			isSearch
-				? eyeOn
-					? "Hide completed"
-					: "Show completed"
-				: eyeOn
-					? "Hide past completed"
-					: "Show past completed"
-		);
-		eye.addEventListener("click", () => {
-			if (isSearch) this.searchShowCompleted = !this.searchShowCompleted;
-			else this.showCompleted = !this.showCompleted;
-			void this.refresh();
-		});
+		// Upcoming lists open tasks only, so it has nothing to reveal.
+		if (!upcomingView) {
+			const eyeOn = isSearch ? this.searchShowCompleted : this.showCompleted;
+			const eye = left.createSpan({ cls: "todo-eye" });
+			setIcon(eye, eyeOn ? "eye-off" : "eye");
+			eye.setAttr(
+				"aria-label",
+				isSearch
+					? eyeOn
+						? "Hide completed"
+						: "Show completed"
+					: eyeOn
+						? "Hide past completed"
+						: "Show past completed"
+			);
+			eye.addEventListener("click", () => {
+				if (isSearch) this.searchShowCompleted = !this.searchShowCompleted;
+				else this.showCompleted = !this.showCompleted;
+				void this.refresh();
+			});
+		}
 
 		const right = header.createDiv({ cls: "todo-header-right" });
 		this.renderSearchControl(right, justOpened, tags);
@@ -1007,7 +1076,7 @@ export class TodoView extends ItemView {
 					this.renderItem(
 						rt,
 						today,
-						isSearch || isToday,
+						isFilterView,
 						tags,
 						hits.get(rt),
 						justCompletedFingerprint
@@ -1015,12 +1084,21 @@ export class TodoView extends ItemView {
 				);
 			}
 		}
+		let lastDay: string | null = null;
 		for (const rt of shown) {
+			// Upcoming: a heading opens each day's group.
+			if (upcomingView && rt.task.due && rt.task.due !== lastDay) {
+				lastDay = rt.task.due;
+				listEl.createDiv({
+					cls: "todo-day-heading",
+					text: dayHeading(lastDay, today),
+				});
+			}
 			listEl.appendChild(
 				this.renderItem(
 					rt,
 					today,
-					isSearch || isToday,
+					isFilterView,
 					tags,
 					hits.get(rt),
 					justCompletedFingerprint
@@ -1038,6 +1116,7 @@ export class TodoView extends ItemView {
 			// the empty state, so there's no separate "Nothing here." message.
 			listEl.appendChild(this.renderAddRow(tags));
 		}
+		if (upcomingView) this.renderUpcomingNote(listEl);
 		if (past.length) {
 			const pastEl = listEl.createDiv({ cls: "todo-past" });
 			for (const rt of past) {
@@ -1045,7 +1124,7 @@ export class TodoView extends ItemView {
 					this.renderItem(
 						rt,
 						today,
-						isSearch || isToday,
+						isFilterView,
 						tags,
 						hits.get(rt),
 						justCompletedFingerprint
@@ -1175,8 +1254,52 @@ export class TodoView extends ItemView {
 	private activateAdd(): void {
 		this.closeSearch();
 		this.editing = null;
+		// A task only shows in Upcoming with a future date, which the inline
+		// row can't set — so adding there goes through the form instead.
+		if (this.selected === UPCOMING) {
+			this.adding = false;
+			void this.refresh();
+			void this.openNewUpcoming({});
+			return;
+		}
 		this.adding = true;
 		void this.refresh();
+	}
+
+	// New-task form for the Upcoming view: due tomorrow, default list.
+	private async openNewUpcoming(prefill: Partial<Task>): Promise<void> {
+		const tasks = await this.plugin.store.readTasks();
+		new TaskModal(
+			this.app,
+			deriveLists(tasks),
+			deriveTags(tasks),
+			null,
+			this.newTaskProject(),
+			async (task) => {
+				await this.plugin.store.addTask(task);
+				await this.refresh();
+			},
+			{ ...prefill, due: addDays(todayStr(), 1) }
+		).open();
+	}
+
+	// Footer of Upcoming: states the range and links to where it's changed.
+	private renderUpcomingNote(listEl: HTMLElement): void {
+		const range = upcomingRange(this.plugin.settings.upcomingRange);
+		const note = listEl.createDiv({ cls: "todo-upcoming-note" });
+		note.appendText(
+			range.days
+				? `Showing tasks due in the next ${range.days} days. `
+				: "Showing every task with a future date. "
+		);
+		const link = note.createEl("a", {
+			text: "Change the range or hide this view in settings",
+			href: "#",
+		});
+		link.addEventListener("click", (e) => {
+			e.preventDefault();
+			this.openSettings();
+		});
 	}
 
 	// Open Obsidian's settings on this plugin's tab. `app.setting` isn't in
@@ -1193,6 +1316,7 @@ export class TodoView extends ItemView {
 
 	// The project a new inline-added task should join, per view context.
 	private newTaskProject(): string {
+		if (this.selected === UPCOMING) return this.plugin.settings.defaultList;
 		if (this.selected !== TODAY) return this.selected;
 		return this.todayFilterList ?? this.plugin.settings.defaultList;
 	}
@@ -1278,6 +1402,9 @@ export class TodoView extends ItemView {
 		justCompletedFingerprint?: string | null
 	): HTMLElement {
 		const t = rt.task;
+		// Upcoming rows act like Results rows: list pills navigate, priority
+		// pills are inert, and rows can't be reordered (the order is by date).
+		const inUpcoming = !search && !this.searching() && this.selected === UPCOMING;
 		const row = createDiv({ cls: "todo-item" });
 		// Stable identity across a full re-render, so a row can be found again
 		// in the old or new DOM by fingerprint alone (see completionFingerprint
@@ -1317,8 +1444,8 @@ export class TodoView extends ItemView {
 				cls: `todo-pri todo-pri-${t.priority}`,
 				text: t.priority,
 			});
-			// Click-to-filter is a Today affordance; in Results it's inert.
-			if (showList && !search) {
+			// Click-to-filter is a Today affordance; elsewhere it's inert.
+			if (showList && !search && !inUpcoming) {
 				const priority = t.priority;
 				pri.addClass("is-clickable");
 				pri.addEventListener("click", (e) => {
@@ -1464,8 +1591,8 @@ export class TodoView extends ItemView {
 				if (st?.color) tag.style.borderColor = st.color;
 				tag.addEventListener("click", (e) => {
 					e.stopPropagation();
-					if (search) {
-						// Jump to the list this result lives in, ending search.
+					if (search || inUpcoming) {
+						// Jump to the list this row lives in, ending search.
 						this.closeSearch();
 						this.selected = project;
 						this.adding = false;
@@ -1565,7 +1692,7 @@ export class TodoView extends ItemView {
 			row.removeClass("is-dragging");
 			this.drag = null;
 		});
-		if (!search) {
+		if (!search && !inUpcoming) {
 			row.addEventListener("dragover", (e) => {
 				if (this.drag && this.drag.index !== rt.index) {
 					e.preventDefault();

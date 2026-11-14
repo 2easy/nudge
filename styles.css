@@ -286,6 +286,26 @@
 	opacity: 0.55;
 }
 
+/* Upcoming: a heading per day, and a footer note naming the range. */
+.todo-day-heading {
+	margin-top: 16px;
+	padding-bottom: 4px;
+	font-size: var(--font-ui-small);
+	font-weight: 600;
+	color: var(--text-muted);
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.todo-day-heading:first-child {
+	margin-top: 0;
+}
+
+.todo-upcoming-note {
+	margin-top: 16px;
+	font-size: var(--font-ui-small);
+	color: var(--text-faint);
+}
+
 .todo-empty {
 	color: var(--text-muted);
 	padding: 16px 0;

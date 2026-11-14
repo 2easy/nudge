@@ -111,6 +111,73 @@ export function serializeTask(t: Task): string {
 	return parts.join(" ");
 }
 
+// --- upcoming -------------------------------------------------------------
+
+// The date `days` days after `day` (both YYYY-MM-DD); negative goes back.
+export function addDays(day: string, days: number): string {
+	const [y, m, d] = day.split("-").map(Number);
+	const dt = new Date(y, m - 1, d + days);
+	const pad = (n: number) => String(n).padStart(2, "0");
+	return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
+}
+
+// Short human date, e.g. "Mon 16 Nov" (with the year once it differs).
+export function shortDate(day: string, today: string): string {
+	const [y, m, d] = day.split("-").map(Number);
+	const dt = new Date(y, m - 1, d);
+	if (Number.isNaN(dt.getTime())) return day;
+	const opts: Intl.DateTimeFormatOptions = {
+		weekday: "short",
+		day: "numeric",
+		month: "short",
+	};
+	if (String(y) !== today.slice(0, 4)) opts.year = "numeric";
+	return dt.toLocaleDateString(undefined, opts);
+}
+
+// How far ahead the Upcoming view looks, in picker order. No `days` means
+// every future date; `hidden` removes the view from the sidebar altogether.
+export const UPCOMING_RANGES: {
+	id: string;
+	label: string;
+	days?: number;
+	hidden?: boolean;
+}[] = [
+	{ id: "7", label: "Next 7 days", days: 7 },
+	{ id: "14", label: "Next 14 days", days: 14 },
+	{ id: "30", label: "Next 30 days", days: 30 },
+	{ id: "all", label: "Everything with a future date" },
+	{ id: "hide", label: "Hide Upcoming", hidden: true },
+];
+export const DEFAULT_UPCOMING_RANGE = "14";
+
+// The configured range, falling back to the default for an unknown id.
+export function upcomingRange(id: string): (typeof UPCOMING_RANGES)[number] {
+	return (
+		UPCOMING_RANGES.find((r) => r.id === id) ??
+		UPCOMING_RANGES.find((r) => r.id === DEFAULT_UPCOMING_RANGE)!
+	);
+}
+
+// Last day (inclusive) the Upcoming view covers; null = no limit.
+export function upcomingEnd(today: string, rangeId: string): string | null {
+	const r = upcomingRange(rangeId);
+	return r.days ? addDays(today, r.days) : null;
+}
+
+// Upcoming = open, due after today, within the range.
+export function isUpcoming(t: Task, today: string, end: string | null): boolean {
+	if (t.completed || !t.due || t.due <= today) return false;
+	return end === null || t.due <= end;
+}
+
+// Heading for a day group in Upcoming: "Tomorrow", else e.g. "Mon 16 Nov"
+// (with the year once it differs from today's).
+export function dayHeading(day: string, today: string): string {
+	if (day === addDays(today, 1)) return "Tomorrow";
+	return shortDate(day, today);
+}
+
 // --- paste ---------------------------------------------------------------
 
 export interface PastedItem {
