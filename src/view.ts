@@ -1355,9 +1355,10 @@ export class TodoView extends ItemView {
 			picker.addEventListener("click", (e) => e.stopPropagation());
 			picker.addEventListener("change", (e) => {
 				e.stopPropagation();
-				if (!picker.value) return;
+				// An empty value means the picker's Clear button: drop the date.
+				const value = picker.value || null;
 				void (async () => {
-					await this.plugin.store.setDue(t.raw, rt.index, picker.value);
+					await this.plugin.store.setDue(t.raw, rt.index, value);
 					await this.refresh();
 				})();
 			});
