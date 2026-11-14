@@ -185,14 +185,17 @@
 }
 
 /* Fuzzy-match highlight: matched characters in the text, and the link button
-   when the match landed in the URL — same accent so both read as "matched". */
+   when the match landed in the URL — same accent so both read as "matched".
+   Newer Obsidian (seen in 1.15.1) no longer defines --text-highlight-bg and
+   uses --highlight-background; the old name stays as the fallback for
+   earlier versions. */
 .todo-search-match {
-	background: var(--text-highlight-bg);
+	background: var(--highlight-background, var(--text-highlight-bg));
 	border-radius: 2px;
 }
 
 .todo-search-match-link {
-	background: var(--text-highlight-bg);
+	background: var(--highlight-background, var(--text-highlight-bg));
 	border-radius: 4px;
 }
 
