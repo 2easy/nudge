@@ -12,6 +12,8 @@ See [SPEC.md](./SPEC.md) for the full design.
 ## Features
 
 - Custom view with a **Today** filter plus one list per `+project` tag.
+- An **Upcoming** view of tasks due in the next 7, 14 or 30 days (or any future date),
+  grouped by day.
 - A configurable **Default list** (default `Inbox`), always pinned under Today.
   Tasks with no `+project` tag (e.g. added by another todo.txt tool) show up here.
 - Optional clean-up of old completed tasks: pick a retention period (1 week to 1 year)

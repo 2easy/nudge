@@ -286,6 +286,26 @@
 	opacity: 0.55;
 }
 
+/* Upcoming: a heading per day, and a footer note naming the range. */
+.todo-day-heading {
+	margin-top: 16px;
+	padding-bottom: 4px;
+	font-size: var(--font-ui-small);
+	font-weight: 600;
+	color: var(--text-muted);
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.todo-day-heading:first-child {
+	margin-top: 0;
+}
+
+.todo-upcoming-note {
+	margin-top: 16px;
+	font-size: var(--font-ui-small);
+	color: var(--text-faint);
+}
+
 .todo-empty {
 	color: var(--text-muted);
 	padding: 16px 0;
@@ -522,6 +542,9 @@
 }
 
 .todo-due {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
 	cursor: pointer;
 }
 
@@ -529,15 +552,37 @@
 	text-decoration: underline;
 }
 
+.todo-due-icon {
+	display: inline-flex;
+}
+
+.todo-due-icon svg {
+	width: 12px;
+	height: 12px;
+}
+
+/* No date yet: just the icon, kept quiet until hovered. */
+.todo-due.is-empty {
+	color: var(--text-faint);
+}
+
+.todo-due.is-empty:hover {
+	color: var(--text-muted);
+}
+
 /* Hidden native date input, anchored so its popup appears near the date. */
+/* !important: Obsidian's own date-input rules (position: relative, left
+   padding for the picker indicator) are more specific and would otherwise
+   put this invisible input back in the flow, leaving a gap after the date. */
 .todo-due-input {
-	position: absolute;
+	position: absolute !important;
 	left: 0;
 	bottom: 0;
-	width: 0;
-	height: 0;
-	padding: 0;
-	border: 0;
+	width: 0 !important;
+	min-width: 0 !important;
+	height: 0 !important;
+	padding: 0 !important;
+	border: 0 !important;
 	opacity: 0;
 	pointer-events: none;
 }
@@ -616,6 +661,33 @@
 	width: 16px;
 	height: 16px;
 	display: block;
+}
+
+/* One-click postpone (one, two, three chevrons): small, in the meta line
+   right after the date, shown on row hover. */
+.todo-postpone {
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	margin-left: -4px;
+}
+
+.todo-postpone-btn {
+	display: inline-flex;
+	padding: 2px 4px;
+	border-radius: 4px;
+	cursor: pointer;
+	color: var(--text-muted);
+}
+
+.todo-postpone-btn:hover {
+	color: var(--text-normal);
+	background: var(--background-modifier-hover);
+}
+
+.todo-postpone-btn svg {
+	width: 14px;
+	height: 14px;
 }
 
 /* Hover-only actions (edit / delete) */

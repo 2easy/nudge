@@ -9,6 +9,7 @@ import {
 	isPurgeable,
 	humanizeTag,
 	parseTask,
+	replaceProject,
 	serializeTask,
 	Task,
 	todayStr,
@@ -127,10 +128,73 @@ export class TodoStore {
 		});
 	}
 
+	// Undo a delete: put the line back at its old position (or at the end,
+	// if the file has since become shorter).
+	async restoreLine(rawLine: string, index: number): Promise<void> {
+		await this.processLines((lines) => {
+			lines.splice(Math.max(0, Math.min(index, lines.length)), 0, rawLine);
+			return lines;
+		});
+	}
+
+	// Undo an edit: turn the line `fromRaw` back into `toRaw`. Resolves false
+	// when `fromRaw` is no longer in the file (it was changed again since).
+	async replaceLine(
+		fromRaw: string,
+		toRaw: string,
+		index: number
+	): Promise<boolean> {
+		let done = false;
+		await this.processLines((lines) => {
+			const i = this.locate(lines, fromRaw, index);
+			done = i >= 0;
+			if (i < 0) return null;
+			lines[i] = toRaw;
+			return lines;
+		});
+		return done;
+	}
+
+	// Undo completing a recurring item: reopen it as it was and remove the
+	// occurrence that completing it spawned. Resolves false when the
+	// completed line is no longer in the file. A spawned line that has been
+	// edited since is left alone rather than guessed at.
+	async undoComplete(
+		completedRaw: string,
+		originalRaw: string,
+		spawnedRaw: string | null
+	): Promise<boolean> {
+		let done = false;
+		await this.processLines((lines) => {
+			const i = lines.indexOf(completedRaw);
+			done = i >= 0;
+			if (i < 0) return null;
+			lines[i] = originalRaw;
+			if (spawnedRaw !== null) {
+				// It was inserted directly above; fall back to a search.
+				const j =
+					i > 0 && lines[i - 1] === spawnedRaw
+						? i - 1
+						: lines.indexOf(spawnedRaw);
+				if (j >= 0) lines.splice(j, 1);
+			}
+			return lines;
+		});
+		return done;
+	}
+
 	// Toggle completion. Completing a recurring item also spawns the next
 	// occurrence (anchored on the original due date) as a new line above it.
-	async toggleComplete(rawLine: string, index: number): Promise<void> {
+	// Resolves with the lines written when an item was completed (so the
+	// caller can offer an undo), or null when it was reopened or not found.
+	async toggleComplete(
+		rawLine: string,
+		index: number
+	): Promise<{ completedRaw: string; spawnedRaw: string | null } | null> {
+		let result: { completedRaw: string; spawnedRaw: string | null } | null =
+			null;
 		await this.processLines((lines) => {
+			result = null;
 			const i = this.locate(lines, rawLine, index);
 			if (i < 0) return null;
 			const t = parseTask(lines[i]);
@@ -147,6 +211,7 @@ export class TodoStore {
 			t.completed = true;
 			t.completionDate = todayStr();
 			lines[i] = serializeTask(t);
+			result = { completedRaw: lines[i], spawnedRaw: null };
 
 			if (recurring && t.rec) {
 				const nd = nextOccurrence(t.rec, anchor);
@@ -156,20 +221,29 @@ export class TodoStore {
 					next.completionDate = null;
 					next.creationDate = todayStr(); // spawned now
 					next.due = nd;
-					lines.splice(i, 0, serializeTask(next));
+					result.spawnedRaw = serializeTask(next);
+					lines.splice(i, 0, result.spawnedRaw);
 				}
 			}
 			return lines;
 		});
+		return result;
 	}
 
-	// Rewrite the item's project membership to a single destination list.
-	async setProject(rawLine: string, index: number, project: string): Promise<void> {
+	// Move the item to a destination list. For an item in several lists only
+	// one tag is swapped — the list it was dragged `from` when it is in it,
+	// else its first — and the rest are kept.
+	async setProject(
+		rawLine: string,
+		index: number,
+		project: string,
+		from?: string | null
+	): Promise<void> {
 		await this.processLines((lines) => {
 			const i = this.locate(lines, rawLine, index);
 			if (i < 0) return null;
 			const t = parseTask(lines[i]);
-			t.projects = [project];
+			t.projects = replaceProject(t.projects, project, from);
 			lines[i] = serializeTask(t);
 			return lines;
 		});
@@ -180,20 +254,25 @@ export class TodoStore {
 		await this.setDue(rawLine, index, todayStr());
 	}
 
-	// Set (or clear, with null) the due date on an item.
+	// Set (or clear, with null) the due date on an item. Resolves with the
+	// rewritten line (so the caller can offer an undo), or null if not found.
 	async setDue(
 		rawLine: string,
 		index: number,
 		date: string | null
-	): Promise<void> {
+	): Promise<string | null> {
+		let written: string | null = null;
 		await this.processLines((lines) => {
 			const i = this.locate(lines, rawLine, index);
+			written = null;
 			if (i < 0) return null;
 			const t = parseTask(lines[i]);
 			t.due = date;
 			lines[i] = serializeTask(t);
+			written = lines[i];
 			return lines;
 		});
+		return written;
 	}
 
 	// Remove a +project tag from every item that has it (items are kept).

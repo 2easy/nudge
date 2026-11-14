@@ -6,7 +6,12 @@ import {
 	hotkeyToDisplay,
 	isModifierOnly,
 } from "./hotkey";
-import { PURGE_PERIODS } from "./todotxt";
+import {
+	DEFAULT_UPCOMING_RANGE,
+	PURGE_PERIODS,
+	UPCOMING_RANGES,
+	upcomingRange,
+} from "./todotxt";
 
 // A per-list color + icon override, matched by name ignoring spaces/case.
 export interface ListStyle {
@@ -23,6 +28,7 @@ export interface TodoSettings {
 	openOnStartup: boolean;
 	showCompletedToday: boolean; // if off, tasks hide as soon as they're completed
 	purgeCompleted: string; // a PURGE_PERIODS id; "never" keeps completed tasks
+	upcomingRange: string; // an UPCOMING_RANGES id: how far ahead Upcoming looks
 	dockBadge: boolean; // macOS Dock badge with a task count
 	dockBadgeIncludeToday: boolean; // badge also counts tasks due today
 	listStyles: ListStyle[];
@@ -36,6 +42,7 @@ export const DEFAULT_SETTINGS: TodoSettings = {
 	openOnStartup: true,
 	showCompletedToday: true,
 	purgeCompleted: "never",
+	upcomingRange: DEFAULT_UPCOMING_RANGE,
 	dockBadge: false,
 	dockBadgeIncludeToday: true,
 	listStyles: [
@@ -117,6 +124,22 @@ export class TodoSettingTab extends PluginSettingTab {
 						this.plugin.refreshViews();
 					})
 			);
+
+		new Setting(containerEl)
+			.setName("Upcoming shows")
+			.setDesc(
+				"How far ahead the upcoming view looks, or hide it from the sidebar. Tasks due later than this stay visible in their own lists."
+			)
+			.addDropdown((d) => {
+				for (const r of UPCOMING_RANGES) d.addOption(r.id, r.label);
+				d.setValue(
+					upcomingRange(this.plugin.settings.upcomingRange).id
+				).onChange(async (value) => {
+					this.plugin.settings.upcomingRange = value;
+					await this.plugin.saveSettings();
+					this.plugin.refreshViews();
+				});
+			});
 
 		new Setting(containerEl)
 			.setName("Remove completed tasks older than")

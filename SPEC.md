@@ -124,16 +124,46 @@ tags are created.
   markdown-block-rendered; `todo.txt` is storage only, never viewed as a rendered note.
 - Follows standard tab navigation: opening Nudge focuses its existing tab or
   reuses an eligible tab; file explorer clicks can navigate away.
+- A **cog** in the tab's header bar (beside Obsidian's "More options") opens Obsidian's
+  settings on the Nudge tab.
 - Layout: sidebar-within-the-pane. Left rail = list of lists. Right = items in the
   selected list.
-- Sidebar order: **"Today" pinned first**, then all other lists **alphabetically**.
+- Sidebar order: **"Today" pinned first**, then **"Upcoming"**, the default list, then all
+  other lists **alphabetically**.
 - **Today view**: automatically populated filter, `due: <= today AND not done`. No manual
   add. Items whose due date is in the past render with the date **highlighted in red**
   (still shown, not hidden). An item in Today is still physically a member of its original
   `+project` list — Today is a filter, not a separate storage location.
+- **Upcoming view**: pinned second, under Today. A filter of open items with
+  `due: > today`, within a configurable range — next 7, **14 (default)** or 30 days, or
+  every future date. The rail badge counts the same set. The same setting can **hide
+  Upcoming** altogether: no rail entry, and a view left on Upcoming falls back to Today.
+  - Sorted by due date, soonest first, under **one heading per day** ("Tomorrow", then
+    e.g. "Mon 16 Nov"); only days with items get a heading. Items sharing a day keep
+    file order. This is the one view not in file order, so rows cannot be reordered here.
+  - Rows otherwise behave like list rows (toggle, inline edit, due picker, delete, drag
+    onto a rail list or Today). List tags navigate to that list; priority pills are inert.
+    Completing an item removes it from the view at once; there is no completed section.
+  - **Adding**: the add row and the **+** button open the new-task form with the due date
+    set to tomorrow and the default list selected. Pasting one task or a link opens the
+    same form prefilled; pasting several lines adds them directly, due tomorrow.
+  - Upcoming is not a drop target: it has no single date to assign.
+  - A footer states the range and links to the setting that changes or hides it.
+  - Recurring items appear once, as the occurrence stored in the file; later repeats are
+    not previewed.
 - **Completed items**: hidden from view on the day *after* they were completed. On the day
   they're completed, they remain visible in their list (and Today, if applicable),
   struck-through — gives a sense of daily progress before disappearing.
+- **Due date on a row**: a small calendar icon followed by the date. Clicking either opens
+  the native date picker, which writes the new date (or clears it) straight to the file.
+  A past date is red only while the item is open; once completed it is no longer marked.
+  An open item with no date shows the icon alone, as the way to set one; a completed item
+  with no date shows nothing.
+- **Quick postpone**: hovering an open item that is due today or overdue shows three
+  small icon buttons right after its date — one, two and three chevrons — which set its due date in one click to tomorrow, the
+  next Monday, or the 1st of next month. Each button's tooltip names the target date, and
+  a notice confirms the new date and offers Undo. Not offered on recurring items (moving the date would
+  shift the schedule), on completed items, or on items due in the future or undated.
 - Items default to **read-only** display. Hovering an item reveals **Edit** and **Delete**
   icon buttons.
 
@@ -193,8 +223,30 @@ All fields are entered through a structured modal — no hand-typed todo.txt syn
 | Recurrence | structured picker (see below) | `rec:<RRULE>` |
 
 - **Edit** opens the same modal, pre-filled with the item's current values.
-- **Delete** is immediate — no confirmation dialog. Relies on Obsidian's file history /
-  version control for recovery, since deletion is just a line removal in a plain text file.
+- **Items in several lists**: a line may carry more than one `+project` tag and then shows
+  in each of those lists. The List dropdown stands for one of them — the list the item
+  was opened from, else its first tag — and saving swaps only that tag, in place; the
+  others are kept, and the field notes which other lists the item stays in. The modal
+  cannot add or remove extra tags.
+- **Delete** is immediate — no confirmation dialog. An **Undo** notice (below) covers a
+  misclick; beyond that, recovery relies on Obsidian's file history / version control,
+  since deletion is just a line removal in a plain text file.
+
+### Undo
+
+Three actions show a notice with an **Undo** link for about 8 seconds:
+
+- **Delete**: undo puts the line back at its old position in the file (or at the end, if
+  the file has since become shorter).
+- **Completing a recurring item**: undo reopens the item as it was and removes the next
+  occurrence that completing it created. Completing a non-recurring item shows no notice:
+  un-ticking the checkbox already reverses it.
+- **Quick postpone**: undo restores the previous due date.
+
+Undo is line-based, in keeping with the no-cache model: it looks for the exact line the
+action wrote and reverses that one change. If that line has been edited again in the
+meantime, nothing is changed and a notice says the undo was not possible. There is one
+level of undo per notice and no undo history.
 
 ### Recurrence picker
 
@@ -218,7 +270,8 @@ has focus adds the clipboard's plain text as tasks:
 
 - **Destination**: the selected list. In Today it is the active list filter, else the
   default list, and the task is due today — the same rule as the inline add row. Paste is
-  ignored while search is open, since Results has no list.
+  ignored while search is open, since Results has no list. In Upcoming see that view's
+  adding rule.
 - **A lone URL** opens the new-task form with the link field filled in, nothing is
   created until it is submitted.
 - **Anything else** creates tasks directly, **one per non-empty line**, appended to the
@@ -236,7 +289,9 @@ has focus adds the clipboard's plain text as tasks:
 Since file line order = display order everywhere, all drags are implemented as direct
 line-position/content edits in `todo.txt`:
 
-- **Drag between lists**: rewrites the item's `+project` tag to the destination list.
+- **Drag between lists**: rewrites the item's `+project` tag to the destination list. For
+  an item in several lists only one tag is swapped — the list it was dragged from, or its
+  first tag when dragged from Today, Upcoming or Results — and the rest are kept.
 - **Drag into Today**: overwrites `due:` to today's date. Destructive — original due date
   is not preserved separately.
 - **Drag to reorder within a list, or within Today**: physically repositions the line in

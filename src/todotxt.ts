@@ -111,6 +111,109 @@ export function serializeTask(t: Task): string {
 	return parts.join(" ");
 }
 
+// --- upcoming -------------------------------------------------------------
+
+// The date `days` days after `day` (both YYYY-MM-DD); negative goes back.
+export function addDays(day: string, days: number): string {
+	const [y, m, d] = day.split("-").map(Number);
+	const dt = new Date(y, m - 1, d + days);
+	const pad = (n: number) => String(n).padStart(2, "0");
+	return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
+}
+
+// The Monday strictly after `day` (a Monday maps to the one a week later).
+export function nextMonday(day: string): string {
+	const [y, m, d] = day.split("-").map(Number);
+	const dow = new Date(y, m - 1, d).getDay(); // 0 = Sunday
+	return addDays(day, ((8 - dow) % 7) || 7);
+}
+
+// The first day of the month after `day`'s.
+export function firstOfNextMonth(day: string): string {
+	const [y, m] = day.split("-").map(Number);
+	const pad = (n: number) => String(n).padStart(2, "0");
+	return m === 12 ? `${y + 1}-01-01` : `${y}-${pad(m + 1)}-01`;
+}
+
+// One-click postpone targets, shortest push first.
+export function postponeTargets(
+	today: string
+): { icon: string; name: string; date: string }[] {
+	return [
+		{ icon: "chevron-right", name: "tomorrow", date: addDays(today, 1) },
+		{ icon: "chevrons-right", name: "next Monday", date: nextMonday(today) },
+		{
+			// Registered by the view: the built-in set stops at two chevrons.
+			icon: "nudge-chevrons-right-3",
+			name: "the 1st of next month",
+			date: firstOfNextMonth(today),
+		},
+	];
+}
+
+// Whether a row gets the postpone buttons: open, due today or overdue, and
+// not recurring (moving a recurring task's date would shift its schedule).
+export function canPostpone(t: Task, today: string): boolean {
+	return !t.completed && !!t.due && t.due <= today && !t.rec;
+}
+
+// Short human date, e.g. "Mon 16 Nov" (with the year once it differs).
+export function shortDate(day: string, today: string): string {
+	const [y, m, d] = day.split("-").map(Number);
+	const dt = new Date(y, m - 1, d);
+	if (Number.isNaN(dt.getTime())) return day;
+	const opts: Intl.DateTimeFormatOptions = {
+		weekday: "short",
+		day: "numeric",
+		month: "short",
+	};
+	if (String(y) !== today.slice(0, 4)) opts.year = "numeric";
+	return dt.toLocaleDateString(undefined, opts);
+}
+
+// How far ahead the Upcoming view looks, in picker order. No `days` means
+// every future date; `hidden` removes the view from the sidebar altogether.
+export const UPCOMING_RANGES: {
+	id: string;
+	label: string;
+	days?: number;
+	hidden?: boolean;
+}[] = [
+	{ id: "7", label: "Next 7 days", days: 7 },
+	{ id: "14", label: "Next 14 days", days: 14 },
+	{ id: "30", label: "Next 30 days", days: 30 },
+	{ id: "all", label: "Everything with a future date" },
+	{ id: "hide", label: "Hide Upcoming", hidden: true },
+];
+export const DEFAULT_UPCOMING_RANGE = "14";
+
+// The configured range, falling back to the default for an unknown id.
+export function upcomingRange(id: string): (typeof UPCOMING_RANGES)[number] {
+	return (
+		UPCOMING_RANGES.find((r) => r.id === id) ??
+		UPCOMING_RANGES.find((r) => r.id === DEFAULT_UPCOMING_RANGE)!
+	);
+}
+
+// Last day (inclusive) the Upcoming view covers; null = no limit.
+export function upcomingEnd(today: string, rangeId: string): string | null {
+	const r = upcomingRange(rangeId);
+	return r.days ? addDays(today, r.days) : null;
+}
+
+// Upcoming = open, due after today, within the range.
+export function isUpcoming(t: Task, today: string, end: string | null): boolean {
+	if (t.completed || !t.due || t.due <= today) return false;
+	return end === null || t.due <= end;
+}
+
+// Heading for a day group in Upcoming: "Tomorrow", else e.g. "Mon 16 Nov"
+// (with the year once it differs from today's).
+export function dayHeading(day: string, today: string): string {
+	if (day === addDays(today, 1)) return "Tomorrow";
+	return shortDate(day, today);
+}
+
 // --- paste ---------------------------------------------------------------
 
 export interface PastedItem {
@@ -244,6 +347,34 @@ export function isPurgeable(t: Task, cutoff: string): boolean {
 export function inList(t: Task, list: string, defaultList: string): boolean {
 	if (t.projects.length === 0) return !!list && list === defaultList;
 	return t.projects.includes(list);
+}
+
+// Which of a task's lists an edit or a drag is acting on: the list it was
+// opened or dragged from when the task is in it, else its first tag.
+export function primaryProject(
+	projects: string[],
+	from?: string | null
+): string | null {
+	if (projects.length === 0) return null;
+	return from && projects.includes(from) ? from : projects[0];
+}
+
+// Move a task to list `to` without dropping its other +project tags: only
+// the primary one (see primaryProject) is swapped, in place. Duplicates
+// that the swap would create are removed.
+export function replaceProject(
+	projects: string[],
+	to: string,
+	from?: string | null
+): string[] {
+	const primary = primaryProject(projects, from);
+	if (primary === null) return [to];
+	const out: string[] = [];
+	for (const p of projects) {
+		const next = p === primary ? to : p;
+		if (!out.includes(next)) out.push(next);
+	}
+	return out;
 }
 
 // Completed items are visible only on the day they were completed (unless
