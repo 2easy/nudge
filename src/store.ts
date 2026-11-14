@@ -6,6 +6,7 @@ import { App, TFile, normalizePath } from "obsidian";
 import {
 	extractTaskTags,
 	foldTagsInText,
+	isPurgeable,
 	humanizeTag,
 	parseTask,
 	serializeTask,
@@ -233,6 +234,21 @@ export class TodoStore {
 			});
 			return kept.length !== lines.length ? kept : null;
 		});
+	}
+
+	// Permanently delete completed items whose completion date is before
+	// `cutoff` (YYYY-MM-DD). Returns how many lines were removed.
+	async purgeCompletedBefore(cutoff: string): Promise<number> {
+		let removed = 0;
+		await this.processLines((lines) => {
+			const kept = lines.filter(
+				(line) => !line.trim() || !isPurgeable(parseTask(line), cutoff)
+			);
+			// Assigned, not accumulated: Vault.process may re-run the transform.
+			removed = lines.length - kept.length;
+			return removed ? kept : null;
+		});
+		return removed;
 	}
 
 	// Append " @tag" to an item's text, unless it already carries that tag

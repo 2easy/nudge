@@ -1,4 +1,4 @@
-import { App, PluginSettingTab, Setting } from "obsidian";
+import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type NudgePlugin from "../main";
 import { IconPickerModal } from "./iconPicker";
 import {
@@ -6,6 +6,7 @@ import {
 	hotkeyToDisplay,
 	isModifierOnly,
 } from "./hotkey";
+import { PURGE_PERIODS } from "./todotxt";
 
 // A per-list color + icon override, matched by name ignoring spaces/case.
 export interface ListStyle {
@@ -21,6 +22,7 @@ export interface TodoSettings {
 	searchHotkey: string; // opens search while the view is active; "" disables
 	openOnStartup: boolean;
 	showCompletedToday: boolean; // if off, tasks hide as soon as they're completed
+	purgeCompleted: string; // a PURGE_PERIODS id; "never" keeps completed tasks
 	dockBadge: boolean; // macOS Dock badge with a task count
 	dockBadgeIncludeToday: boolean; // badge also counts tasks due today
 	listStyles: ListStyle[];
@@ -33,6 +35,7 @@ export const DEFAULT_SETTINGS: TodoSettings = {
 	searchHotkey: "",
 	openOnStartup: true,
 	showCompletedToday: true,
+	purgeCompleted: "never",
 	dockBadge: false,
 	dockBadgeIncludeToday: true,
 	listStyles: [
@@ -113,6 +116,41 @@ export class TodoSettingTab extends PluginSettingTab {
 						await this.plugin.saveSettings();
 						this.plugin.refreshViews();
 					})
+			);
+
+		new Setting(containerEl)
+			.setName("Remove completed tasks older than")
+			.setDesc(
+				"Completed tasks older than this are permanently deleted from the file, automatically at startup and once a day."
+			)
+			.addDropdown((d) => {
+				for (const p of PURGE_PERIODS) d.addOption(p.id, p.label);
+				const current = this.plugin.settings.purgeCompleted;
+				d.setValue(
+					PURGE_PERIODS.some((p) => p.id === current) ? current : "never"
+				).onChange(async (value) => {
+					this.plugin.settings.purgeCompleted = value;
+					await this.plugin.saveSettings();
+				});
+			})
+			.addButton((b) =>
+				b.setButtonText("Clean up now").onClick(async () => {
+					if (!this.plugin.purgeEnabled()) {
+						new Notice("Choose how long to keep completed tasks first.");
+						return;
+					}
+					try {
+						const n = await this.plugin.purgeOldCompleted();
+						new Notice(
+							n
+								? `Removed ${n} completed task${n === 1 ? "" : "s"}.`
+								: "No completed tasks old enough to remove."
+						);
+					} catch (e) {
+						console.error("Nudge: clean-up failed", e);
+						new Notice("Clean-up failed. See the console for details.");
+					}
+				})
 			);
 
 		new Setting(containerEl)

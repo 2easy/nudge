@@ -11,7 +11,7 @@ import { DEFAULT_SETTINGS, TodoSettings, TodoSettingTab } from "./src/settings";
 import { TodoView, VIEW_TYPE_TODO } from "./src/view";
 import { TaskModal } from "./src/modal";
 import { matchHotkey } from "./src/hotkey";
-import { Priority, Task, todayStr } from "./src/todotxt";
+import { Priority, Task, purgeCutoff, todayStr } from "./src/todotxt";
 
 // The subset of Electron's remote surface the badge needs, as exposed by
 // Obsidian to desktop plugins — window.electron.remote in current builds, or
@@ -134,6 +134,9 @@ export default class NudgePlugin extends Plugin {
 		// layout-ready so the vault index already knows the file.
 		this.app.workspace.onLayoutReady(() => void this.updateBadge());
 
+		// Drop long-completed tasks at startup; the day tick below repeats it.
+		this.app.workspace.onLayoutReady(() => void this.autoPurge());
+
 		// Day rollover: at midnight (or on wake past it) the overdue/due-today
 		// populations change even though the file didn't. A cheap minute tick
 		// spots the date flip, then refreshes open views and the badge.
@@ -145,6 +148,7 @@ export default class NudgePlugin extends Plugin {
 				lastDay = day;
 				this.refreshViews();
 				void this.updateBadge();
+				void this.autoPurge();
 			}, 60_000)
 		);
 	}
@@ -260,6 +264,31 @@ export default class NudgePlugin extends Plugin {
 		for (const leaf of this.app.workspace.getLeavesOfType(VIEW_TYPE_TODO)) {
 			const view = leaf.view;
 			if (view instanceof TodoView) void view.refresh();
+		}
+	}
+
+	// Whether a retention period is set (anything but "Keep forever").
+	purgeEnabled(): boolean {
+		return purgeCutoff(todayStr(), this.settings.purgeCompleted) !== null;
+	}
+
+	// Permanently delete tasks completed longer ago than the configured
+	// retention period. Returns how many were removed; 0 when set to keep
+	// forever. The file write fires the vault "modify" event, which refreshes
+	// views.
+	async purgeOldCompleted(): Promise<number> {
+		const cutoff = purgeCutoff(todayStr(), this.settings.purgeCompleted);
+		if (!cutoff) return 0;
+		return this.store.purgeCompletedBefore(cutoff);
+	}
+
+	// Unattended variant: a failure (e.g. a bad file path) must not surface
+	// as an unhandled rejection.
+	private async autoPurge(): Promise<void> {
+		try {
+			await this.purgeOldCompleted();
+		} catch (e) {
+			console.error("Nudge: automatic clean-up failed", e);
 		}
 	}
 
