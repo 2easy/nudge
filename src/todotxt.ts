@@ -123,6 +123,14 @@ export function todayStr(): string {
 
 // --- visibility / filtering ---------------------------------------------
 
+// List membership. A task with no +project tag belongs to the default list,
+// so lines written by other todo.txt tools are never hidden. This is a display
+// rule only: the line itself is not rewritten.
+export function inList(t: Task, list: string, defaultList: string): boolean {
+	if (t.projects.length === 0) return !!list && list === defaultList;
+	return t.projects.includes(list);
+}
+
 // Completed items are visible only on the day they were completed (unless
 // showCompletedToday is off, hiding them immediately); the day after, they
 // disappear from all views regardless.

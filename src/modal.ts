@@ -15,6 +15,10 @@ import {
 } from "./recurrence";
 
 const NEW_LIST = "__new__";
+// Dropdown choice for an existing task with no +project tag. It stands in for
+// the default list (where such tasks are shown) and saves with no tag, so
+// editing an untagged line never writes a tag the user didn't pick.
+const NO_LIST = "__none__";
 
 // Priority mapping per spec: None / Low=(C) / Med=(B) / High=(A).
 const PRIORITY_OPTIONS: { value: string; label: string }[] = [
@@ -37,6 +41,9 @@ export class TaskModal extends Modal {
 	// Working field state.
 	private text: string;
 	private listChoice: string;
+	// Default list name when editing an untagged task ("" if none is set);
+	// null for tagged or new tasks.
+	private untaggedList: string | null;
 	private newListName = "";
 	private due: string | null;
 	private priority: Priority;
@@ -77,13 +84,17 @@ export class TaskModal extends Modal {
 				? parseRRule(prefill.rec)
 				: defaultRecState();
 
+		const untagged = !!existing && existing.projects.length === 0;
+		this.untaggedList = untagged ? defaultList ?? "" : null;
 		const firstProject =
 			existing?.projects[0] ?? prefill?.projects?.[0] ?? defaultList ?? "";
-		this.listChoice = firstProject && lists.includes(firstProject)
-			? firstProject
-			: firstProject
-				? firstProject // preserve even if not yet in derived lists
-				: lists[0] ?? NEW_LIST;
+		this.listChoice = untagged
+			? NO_LIST
+			: firstProject && lists.includes(firstProject)
+				? firstProject
+				: firstProject
+					? firstProject // preserve even if not yet in derived lists
+					: lists[0] ?? NEW_LIST;
 		if (this.listChoice === NEW_LIST) this.newListName = "";
 
 		// Force the "New list…" branch when opened via the new-list affordance,
@@ -112,9 +123,24 @@ export class TaskModal extends Modal {
 		// List dropdown (existing lists + "New list…").
 		new Setting(contentEl).setName("List").addDropdown((d) => {
 			const known = new Set(this.lists);
-			for (const l of this.lists) d.addOption(l, humanizeProject(l));
+			// Untagged task: one entry for the default list that keeps it
+			// untagged, in place of the default list's own (tagging) entry.
+			if (this.untaggedList !== null) {
+				d.addOption(
+					NO_LIST,
+					this.untaggedList ? humanizeProject(this.untaggedList) : "No list"
+				);
+			}
+			for (const l of this.lists) {
+				if (this.untaggedList !== null && l === this.untaggedList) continue;
+				d.addOption(l, humanizeProject(l));
+			}
 			// Preserve an existing project even if it isn't in the derived set.
-			if (this.listChoice !== NEW_LIST && !known.has(this.listChoice)) {
+			if (
+				this.listChoice !== NEW_LIST &&
+				this.listChoice !== NO_LIST &&
+				!known.has(this.listChoice)
+			) {
 				d.addOption(this.listChoice, humanizeProject(this.listChoice));
 			}
 			d.addOption(NEW_LIST, "New list…");
@@ -274,7 +300,7 @@ export class TaskModal extends Modal {
 			creationDate: this.existing?.creationDate ?? null,
 			priority: this.priority,
 			text,
-			projects: [project],
+			projects: this.listChoice === NO_LIST ? [] : [project],
 			due: this.due,
 			link: this.link,
 			rec: buildRRule(this.rec),

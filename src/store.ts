@@ -217,12 +217,20 @@ export class TodoStore {
 		});
 	}
 
-	// Permanently delete every line belonging to a +project tag.
-	async deleteListItems(project: string): Promise<void> {
+	// Permanently delete every line belonging to a +project tag. For the
+	// default list, `includeUntagged` also deletes lines with no +project tag,
+	// since the view shows those as part of that list.
+	async deleteListItems(
+		project: string,
+		includeUntagged = false
+	): Promise<void> {
 		await this.processLines((lines) => {
-			const kept = lines.filter(
-				(line) => !line.trim() || !parseTask(line).projects.includes(project)
-			);
+			const kept = lines.filter((line) => {
+				if (!line.trim()) return true;
+				const { projects } = parseTask(line);
+				if (projects.length === 0) return !includeUntagged;
+				return !projects.includes(project);
+			});
 			return kept.length !== lines.length ? kept : null;
 		});
 	}

@@ -13,6 +13,7 @@ See [SPEC.md](./SPEC.md) for the full design.
 
 - Custom view with a **Today** filter plus one list per `+project` tag.
 - A configurable **Default list** (default `Inbox`), always pinned under Today.
+  Tasks with no `+project` tag (e.g. added by another todo.txt tool) show up here.
 - Structured create/edit modal — no hand-typed todo.txt syntax. Fields: text,
   list, due date, priority, link, and a recurrence picker (stored as `rec:<RRULE>`).
 - Completing a recurring item spawns its next occurrence, anchored on the

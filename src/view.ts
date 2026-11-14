@@ -13,6 +13,7 @@ import {
 	extractTaskTags,
 	humanizeProject,
 	humanizeTag,
+	inList,
 	inToday,
 	isPastDue,
 	isVisible,
@@ -376,7 +377,7 @@ export class TodoView extends ItemView {
 		// Counts show only uncompleted tasks.
 		const listCount = (name: string) =>
 			tasks.filter(
-				(rt) => rt.task.projects.includes(name) && !rt.task.completed
+				(rt) => inList(rt.task, name, defaultList) && !rt.task.completed
 			).length;
 
 		const showCompletedToday = this.plugin.settings.showCompletedToday;
@@ -651,16 +652,17 @@ export class TodoView extends ItemView {
 				: [];
 		} else {
 			// Membership of a task in the current view, ignoring completion.
+			const defaultList = this.plugin.settings.defaultList;
 			const belongs = (rt: RenderTask) =>
 				isToday
 					? !!rt.task.due && rt.task.due <= today
-					: rt.task.projects.includes(this.selected);
+					: inList(rt.task, this.selected, defaultList);
 
 			// In Today, optional list/priority filters narrow both groups.
 			const matchesFilter = (rt: RenderTask) =>
 				!isToday ||
 				((!this.todayFilterList ||
-					rt.task.projects.includes(this.todayFilterList)) &&
+					inList(rt.task, this.todayFilterList, defaultList)) &&
 					(!this.todayFilterPriority ||
 						rt.task.priority === this.todayFilterPriority));
 
@@ -835,7 +837,10 @@ export class TodoView extends ItemView {
 						await this.refresh();
 					},
 					async () => {
-						await this.plugin.store.deleteListItems(list);
+						await this.plugin.store.deleteListItems(
+							list,
+							list === this.plugin.settings.defaultList
+						);
 						await this.refresh();
 					}
 				).open();
@@ -1313,7 +1318,14 @@ export class TodoView extends ItemView {
 		// In Today, show the originating list(s) to the left of the due date,
 		// one pill each so per-list colors/icons apply.
 		if (showList) {
-			for (const project of t.projects) {
+			// Untagged tasks live in the default list, so they show its pill.
+			const defaultList = this.plugin.settings.defaultList;
+			const shownLists = t.projects.length
+				? t.projects
+				: defaultList
+					? [defaultList]
+					: [];
+			for (const project of shownLists) {
 				const tag = meta.createSpan({ cls: "todo-list-tag" });
 				const st = this.styleFor(project);
 				if (st?.icon) {
@@ -1548,7 +1560,9 @@ export class TodoView extends ItemView {
 		const tasks = await this.plugin.store.readTasks();
 		const lists = deriveLists(tasks);
 		const tags = deriveTags(tasks);
-		new TaskModal(this.app, lists, tags, rt.task, null, async (task) => {
+		// The default list is passed so an untagged task shows under its name.
+		const defaultList = this.plugin.settings.defaultList || null;
+		new TaskModal(this.app, lists, tags, rt.task, defaultList, async (task) => {
 			await this.plugin.store.updateTask(rt.task.raw, rt.index, task);
 			await this.refresh();
 		}).open();
