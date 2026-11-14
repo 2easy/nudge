@@ -22,6 +22,13 @@ plugins enabled) already is.
   all `+project` tags present in the file — no separate config of "which lists exist."
 - A list remains visible in the sidebar as long as it has **at least one item**, completed
   or not.
+- **Untagged items belong to the default list.** A line with no `+project` tag (e.g. one
+  added by another todo.txt tool or a text editor) is shown and counted in the default
+  list, alongside items tagged with it. This is a display rule: the line is not rewritten
+  when its date, text or other fields are edited; only choosing another list in the
+  modal or dragging it to a list writes a `+project` tag.
+  "Delete all items" on the default list deletes untagged lines too. With no default list
+  configured, untagged items appear only in Today (when due) and in search.
 - **Physical line order in the file is the display order, everywhere** — including the Today
   view. There is no separate `order:` field; position in the file *is* the order.
 - **No long-lived in-memory cache.** Every render reads the file fresh from disk. Every
