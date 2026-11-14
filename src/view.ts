@@ -23,6 +23,7 @@ import {
 	normalizeListName,
 	parsePaste,
 	parseTask,
+	shortDate,
 	TAG_TOKEN_RE,
 	tagMatchesQuery,
 	todayStr,
@@ -419,8 +420,52 @@ export class TodoView extends ItemView {
 		if (!rt.task.completed) {
 			this.armJustCompleted(completionFingerprint(rt.task));
 		}
-		await this.plugin.store.toggleComplete(rt.task.raw, rt.index);
+		const done = await this.plugin.store.toggleComplete(
+			rt.task.raw,
+			rt.index
+		);
 		await this.refresh();
+		// Completing a recurring item also wrote its next occurrence, which
+		// un-ticking the box would not remove — so that gets an undo.
+		if (done?.spawnedRaw) {
+			const { completedRaw, spawnedRaw } = done;
+			const nextDue = parseTask(spawnedRaw).due;
+			this.undoNotice(
+				nextDue
+					? `Completed. Next one is due ${shortDate(nextDue, todayStr())}.`
+					: "Completed.",
+				() =>
+					this.plugin.store.undoComplete(
+						completedRaw,
+						rt.task.raw,
+						spawnedRaw
+					)
+			);
+		}
+	}
+
+	// A notice with an Undo link. `undo` resolves false when the change can
+	// no longer be reversed (the line was edited again in the meantime).
+	private undoNotice(message: string, undo: () => Promise<boolean>): void {
+		const frag = createFragment();
+		frag.appendText(message + " ");
+		const link = frag.createEl("a", { text: "Undo", href: "#" });
+		const notice = new Notice(frag, 8000);
+		link.addEventListener("click", (e) => {
+			e.preventDefault();
+			e.stopPropagation();
+			notice.hide();
+			void (async () => {
+				let ok = false;
+				try {
+					ok = await undo();
+				} catch (err) {
+					console.error("Nudge: undo failed", err);
+				}
+				await this.refresh();
+				if (!ok) new Notice("Could not undo: the task has changed since.");
+			})();
+		});
 	}
 
 	// The file write below lands on disk and, via the vault's own `modify`
@@ -1684,6 +1729,12 @@ export class TodoView extends ItemView {
 			void (async () => {
 				await this.plugin.store.deleteTask(rt.task.raw, rt.index);
 				await this.refresh();
+				const label =
+					t.text.length > 40 ? t.text.slice(0, 40).trimEnd() + "…" : t.text;
+				this.undoNotice(`Deleted “${label}”.`, async () => {
+					await this.plugin.store.restoreLine(rt.task.raw, rt.index);
+					return true;
+				});
 			})();
 		});
 

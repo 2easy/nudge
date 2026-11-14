@@ -218,8 +218,24 @@ All fields are entered through a structured modal — no hand-typed todo.txt syn
 | Recurrence | structured picker (see below) | `rec:<RRULE>` |
 
 - **Edit** opens the same modal, pre-filled with the item's current values.
-- **Delete** is immediate — no confirmation dialog. Relies on Obsidian's file history /
-  version control for recovery, since deletion is just a line removal in a plain text file.
+- **Delete** is immediate — no confirmation dialog. An **Undo** notice (below) covers a
+  misclick; beyond that, recovery relies on Obsidian's file history / version control,
+  since deletion is just a line removal in a plain text file.
+
+### Undo
+
+Three actions show a notice with an **Undo** link for about 8 seconds:
+
+- **Delete**: undo puts the line back at its old position in the file (or at the end, if
+  the file has since become shorter).
+- **Completing a recurring item**: undo reopens the item as it was and removes the next
+  occurrence that completing it created. Completing a non-recurring item shows no notice:
+  un-ticking the checkbox already reverses it.
+
+Undo is line-based, in keeping with the no-cache model: it looks for the exact line the
+action wrote and reverses that one change. If that line has been edited again in the
+meantime, nothing is changed and a notice says the undo was not possible. There is one
+level of undo per notice and no undo history.
 
 ### Recurrence picker
 
