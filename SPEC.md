@@ -124,6 +124,8 @@ tags are created.
   markdown-block-rendered; `todo.txt` is storage only, never viewed as a rendered note.
 - Follows standard tab navigation: opening Nudge focuses its existing tab or
   reuses an eligible tab; file explorer clicks can navigate away.
+- A **cog** in the tab's header bar (beside Obsidian's "More options") opens Obsidian's
+  settings on the Nudge tab.
 - Layout: sidebar-within-the-pane. Left rail = list of lists. Right = items in the
   selected list.
 - Sidebar order: **"Today" pinned first**, then all other lists **alphabetically**.

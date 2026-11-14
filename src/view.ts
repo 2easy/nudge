@@ -182,6 +182,9 @@ export class TodoView extends ItemView {
 		this.railEl = root.createDiv({ cls: "todo-rail" });
 		this.panelEl = root.createDiv({ cls: "todo-panel" });
 
+		// Cog in the tab's own header (next to Obsidian's "more options").
+		this.addAction("settings", "Nudge settings", () => this.openSettings());
+
 		// Configurable search hotkey (unset by default), honored only while
 		// this view is the active pane; capture phase so it wins over
 		// Obsidian's own binding for the combo (e.g. find-in-note for Cmd+F).
@@ -1174,6 +1177,18 @@ export class TodoView extends ItemView {
 		this.editing = null;
 		this.adding = true;
 		void this.refresh();
+	}
+
+	// Open Obsidian's settings on this plugin's tab. `app.setting` isn't in
+	// the public typings, but it's the standard way to do this.
+	private openSettings(): void {
+		const setting = (
+			this.app as unknown as {
+				setting?: { open(): void; openTabById(id: string): void };
+			}
+		).setting;
+		setting?.open();
+		setting?.openTabById(this.plugin.manifest.id);
 	}
 
 	// The project a new inline-added task should join, per view context.
