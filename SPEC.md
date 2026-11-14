@@ -54,7 +54,15 @@ x 2026-07-11 Buy milk +Groceries due:2026-07-11
   string (via the `rrule` npm library), e.g. `FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR` for "every
   workday", `FREQ=MONTHLY;BYDAY=1SU` for "first Sunday of the month".
 - Completed items: prefixed `x <completion-date>` per spec, kept in the file (never deleted
-  by completion — only explicit Delete removes a line).
+  by completion — only explicit Delete or the clean-up below removes a line).
+- **Clean-up of old completed items**: items whose completion date is older than a chosen
+  retention period are permanently deleted from the file. The setting is a picker: Keep
+  forever (**default**, nothing is deleted), 1 week, 2 weeks, 1 month, 2 months, 3 months,
+  6 months, 1 year. Weeks count days; months and years count calendar months.
+  Runs automatically at startup (layout-ready) and on each day rollover, and on demand
+  from a "Clean up now" button in settings. Changing the period does not itself trigger a
+  run. Completed items with no completion date are never removed. A list whose only
+  items were removed this way disappears from the sidebar, like any empty list.
 
 ## Tags (`@context`)
 

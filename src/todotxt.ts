@@ -121,6 +121,59 @@ export function todayStr(): string {
 	return `${y}-${m}-${day}`;
 }
 
+// The date `months` calendar months before `day` (both YYYY-MM-DD). The day
+// of month is clamped to the target month's length (May 31 - 3 → Feb 28/29).
+export function monthsBefore(day: string, months: number): string {
+	const [y, m, d] = day.split("-").map(Number);
+	const total = y * 12 + (m - 1) - months;
+	const ty = Math.floor(total / 12);
+	const tm = total - ty * 12; // 0-based
+	const last = new Date(ty, tm + 1, 0).getDate();
+	const pad = (n: number) => String(n).padStart(2, "0");
+	return `${ty}-${pad(tm + 1)}-${pad(Math.min(d, last))}`;
+}
+
+// Retention choices for completed tasks, in picker order. "never" keeps them
+// forever. Weeks are counted in days, months and years in calendar months.
+export const PURGE_PERIODS: {
+	id: string;
+	label: string;
+	days?: number;
+	months?: number;
+}[] = [
+	{ id: "never", label: "Keep forever" },
+	{ id: "1w", label: "1 week", days: 7 },
+	{ id: "2w", label: "2 weeks", days: 14 },
+	{ id: "1m", label: "1 month", months: 1 },
+	{ id: "2m", label: "2 months", months: 2 },
+	{ id: "3m", label: "3 months", months: 3 },
+	{ id: "6m", label: "6 months", months: 6 },
+	{ id: "1y", label: "1 year", months: 12 },
+];
+
+// Cutoff date for a retention period id: tasks completed before it are
+// purged. null means keep everything, which is also the answer for an
+// unrecognized id, so a bad settings value can never delete data.
+export function purgeCutoff(day: string, periodId: string): string | null {
+	const p = PURGE_PERIODS.find((x) => x.id === periodId);
+	if (!p) return null;
+	if (p.months) return monthsBefore(day, p.months);
+	if (p.days) {
+		const [y, m, d] = day.split("-").map(Number);
+		const dt = new Date(y, m - 1, d - p.days);
+		const pad = (n: number) => String(n).padStart(2, "0");
+		return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
+	}
+	return null;
+}
+
+// Whether a line is old enough to purge: completed, with a completion date
+// strictly before `cutoff`. A completed line with no date is never purged,
+// since its age is unknown.
+export function isPurgeable(t: Task, cutoff: string): boolean {
+	return t.completed && !!t.completionDate && t.completionDate < cutoff;
+}
+
 // --- visibility / filtering ---------------------------------------------
 
 // List membership. A task with no +project tag belongs to the default list,
