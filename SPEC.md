@@ -159,6 +159,11 @@ tags are created.
   A past date is red only while the item is open; once completed it is no longer marked.
   An open item with no date shows the icon alone, as the way to set one; a completed item
   with no date shows nothing.
+- **Quick postpone**: hovering an open item that is due today or overdue shows three
+  small icon buttons right after its date — one, two and three chevrons — which set its due date in one click to tomorrow, the
+  next Monday, or the 1st of next month. Each button's tooltip names the target date, and
+  a notice confirms the new date and offers Undo. Not offered on recurring items (moving the date would
+  shift the schedule), on completed items, or on items due in the future or undated.
 - Items default to **read-only** display. Hovering an item reveals **Edit** and **Delete**
   icon buttons.
 
@@ -231,6 +236,7 @@ Three actions show a notice with an **Undo** link for about 8 seconds:
 - **Completing a recurring item**: undo reopens the item as it was and removes the next
   occurrence that completing it created. Completing a non-recurring item shows no notice:
   un-ticking the checkbox already reverses it.
+- **Quick postpone**: undo restores the previous due date.
 
 Undo is line-based, in keeping with the no-cache model: it looks for the exact line the
 action wrote and reverses that one change. If that line has been edited again in the

@@ -663,6 +663,33 @@
 	display: block;
 }
 
+/* One-click postpone (one, two, three chevrons): small, in the meta line
+   right after the date, shown on row hover. */
+.todo-postpone {
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	margin-left: -4px;
+}
+
+.todo-postpone-btn {
+	display: inline-flex;
+	padding: 2px 4px;
+	border-radius: 4px;
+	cursor: pointer;
+	color: var(--text-muted);
+}
+
+.todo-postpone-btn:hover {
+	color: var(--text-normal);
+	background: var(--background-modifier-hover);
+}
+
+.todo-postpone-btn svg {
+	width: 14px;
+	height: 14px;
+}
+
 /* Hover-only actions (edit / delete) */
 .todo-hover {
 	visibility: hidden;

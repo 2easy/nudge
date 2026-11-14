@@ -121,6 +121,42 @@ export function addDays(day: string, days: number): string {
 	return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`;
 }
 
+// The Monday strictly after `day` (a Monday maps to the one a week later).
+export function nextMonday(day: string): string {
+	const [y, m, d] = day.split("-").map(Number);
+	const dow = new Date(y, m - 1, d).getDay(); // 0 = Sunday
+	return addDays(day, ((8 - dow) % 7) || 7);
+}
+
+// The first day of the month after `day`'s.
+export function firstOfNextMonth(day: string): string {
+	const [y, m] = day.split("-").map(Number);
+	const pad = (n: number) => String(n).padStart(2, "0");
+	return m === 12 ? `${y + 1}-01-01` : `${y}-${pad(m + 1)}-01`;
+}
+
+// One-click postpone targets, shortest push first.
+export function postponeTargets(
+	today: string
+): { icon: string; name: string; date: string }[] {
+	return [
+		{ icon: "chevron-right", name: "tomorrow", date: addDays(today, 1) },
+		{ icon: "chevrons-right", name: "next Monday", date: nextMonday(today) },
+		{
+			// Registered by the view: the built-in set stops at two chevrons.
+			icon: "nudge-chevrons-right-3",
+			name: "the 1st of next month",
+			date: firstOfNextMonth(today),
+		},
+	];
+}
+
+// Whether a row gets the postpone buttons: open, due today or overdue, and
+// not recurring (moving a recurring task's date would shift its schedule).
+export function canPostpone(t: Task, today: string): boolean {
+	return !t.completed && !!t.due && t.due <= today && !t.rec;
+}
+
 // Short human date, e.g. "Mon 16 Nov" (with the year once it differs).
 export function shortDate(day: string, today: string): string {
 	const [y, m, d] = day.split("-").map(Number);

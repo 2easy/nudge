@@ -1,5 +1,6 @@
 import {
 	ItemView,
+	addIcon,
 	Menu,
 	Notice,
 	WorkspaceLeaf,
@@ -11,6 +12,7 @@ import { RenderTask, TagInfo, deriveLists, deriveTags } from "./store";
 import {
 	addDays,
 	asciiFold,
+	canPostpone,
 	dayHeading,
 	extractTaskTags,
 	humanizeProject,
@@ -23,6 +25,7 @@ import {
 	normalizeListName,
 	parsePaste,
 	parseTask,
+	postponeTargets,
 	shortDate,
 	TAG_TOKEN_RE,
 	tagMatchesQuery,
@@ -42,6 +45,13 @@ import { attachTagSuggest, TagSuggestHandle } from "./tagSuggest";
 import type { ListStyle } from "./settings";
 
 export const VIEW_TYPE_TODO = "nudge-view";
+
+// Triple chevron for the longest postpone, drawn to match the built-in
+// chevron-right / chevrons-right (24px grid, scaled to addIcon's 100px box).
+addIcon(
+	"nudge-chevrons-right-3",
+	'<g fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" transform="scale(4.1667)"><path d="m3 17 5-5-5-5"/><path d="m9.5 17 5-5-5-5"/><path d="m16 17 5-5-5-5"/></g>'
+);
 const TODAY = " today"; // sentinel; sorts/handles distinctly from real lists
 const UPCOMING = " upcoming"; // sentinel for the future-dated filter view
 const PASTE_CONFIRM_ABOVE = 10; // pasting more lines than this asks first
@@ -1684,6 +1694,34 @@ export class TodoView extends ItemView {
 					await this.refresh();
 				})();
 			});
+		}
+		// One-click postpone, right after the date it changes, on rows that
+		// are due or overdue: one, two or three chevrons push the date to
+		// tomorrow, next Monday, the 1st of next month.
+		if (canPostpone(t, today)) {
+			const group = meta.createSpan({ cls: "todo-postpone todo-hover" });
+			for (const target of postponeTargets(today)) {
+				const when = shortDate(target.date, today);
+				const btn = group.createSpan({ cls: "todo-postpone-btn" });
+				setIcon(btn, target.icon);
+				btn.setAttr("role", "button");
+				btn.setAttr("aria-label", `Postpone to ${target.name} (${when})`);
+				btn.addEventListener("click", (e) => {
+					e.stopPropagation();
+					void (async () => {
+						const written = await this.plugin.store.setDue(
+							t.raw,
+							rt.index,
+							target.date
+						);
+						await this.refresh();
+						if (written === null) return;
+						this.undoNotice(`Postponed to ${when}.`, () =>
+							this.plugin.store.replaceLine(written, t.raw, rt.index)
+						);
+					})();
+				});
+			}
 		}
 		if (t.rec) {
 			const r = meta.createSpan({ cls: "todo-rec" });
