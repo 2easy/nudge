@@ -1606,16 +1606,24 @@ export class TodoView extends ItemView {
 				});
 			}
 		}
-		if (t.due) {
+		// Due date: a calendar icon, followed by the date when one is set. With
+		// no date the icon alone is the way to set one. A completed task with
+		// no date shows nothing: there is nothing left to schedule.
+		if (t.due || !t.completed) {
 			const wrap = meta.createSpan({ cls: "todo-due-wrap" });
-			const due = wrap.createSpan({ cls: "todo-due", text: t.due });
-			if (isPastDue(t, today)) due.addClass("is-overdue");
-			// Clicking the date opens a native picker that writes back on change.
+			const due = wrap.createSpan({ cls: "todo-due" });
+			setIcon(due.createSpan({ cls: "todo-due-icon" }), "calendar");
+			if (t.due) due.createSpan({ text: t.due });
+			else due.addClass("is-empty");
+			due.setAttr("aria-label", t.due ? "Change due date" : "Set due date");
+			// Overdue only means something while the task is still open.
+			if (!t.completed && isPastDue(t, today)) due.addClass("is-overdue");
+			// Clicking it opens a native picker that writes back on change.
 			const picker = wrap.createEl("input", {
 				type: "date",
 				cls: "todo-due-input",
 			});
-			picker.value = t.due;
+			picker.value = t.due ?? "";
 			due.addEventListener("click", (e) => {
 				e.stopPropagation();
 				if (typeof picker.showPicker === "function") picker.showPicker();

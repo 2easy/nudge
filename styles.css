@@ -542,11 +542,32 @@
 }
 
 .todo-due {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
 	cursor: pointer;
 }
 
 .todo-due:hover {
 	text-decoration: underline;
+}
+
+.todo-due-icon {
+	display: inline-flex;
+}
+
+.todo-due-icon svg {
+	width: 12px;
+	height: 12px;
+}
+
+/* No date yet: just the icon, kept quiet until hovered. */
+.todo-due.is-empty {
+	color: var(--text-faint);
+}
+
+.todo-due.is-empty:hover {
+	color: var(--text-muted);
 }
 
 /* Hidden native date input, anchored so its popup appears near the date. */

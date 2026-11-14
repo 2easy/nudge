@@ -154,6 +154,11 @@ tags are created.
 - **Completed items**: hidden from view on the day *after* they were completed. On the day
   they're completed, they remain visible in their list (and Today, if applicable),
   struck-through — gives a sense of daily progress before disappearing.
+- **Due date on a row**: a small calendar icon followed by the date. Clicking either opens
+  the native date picker, which writes the new date (or clears it) straight to the file.
+  A past date is red only while the item is open; once completed it is no longer marked.
+  An open item with no date shows the icon alone, as the way to set one; a completed item
+  with no date shows nothing.
 - Items default to **read-only** display. Hovering an item reveals **Edit** and **Delete**
   icon buttons.
 
