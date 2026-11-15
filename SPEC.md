@@ -19,9 +19,22 @@ plugins enabled) already is.
 - Single file: `todo.txt`, stored inside the vault at a configurable path (default: vault root).
 - Format: [todo.txt spec](http://todotxt.org/) with custom key:value extensions.
 - **Lists** = `+ProjectName` tags on each line. Lists are **dynamically derived** by scanning
-  all `+project` tags present in the file — no separate config of "which lists exist."
+  all `+project` tags present in the file.
 - A list remains visible in the sidebar as long as it has **at least one item**, completed
   or not.
+- **Kept lists**: a list made with the sidebar's **"New list"** tile is also remembered by
+  Nudge, as a list style with a `keep` flag in the plugin settings. It shows in the sidebar
+  even with no items, and stays there after its items are gone, until the list is deleted.
+  Its items are ordinary `+project` lines; matching against tags ignores spaces and case,
+  and a tag's spelling wins for display. The flag can also be toggled per list style in
+  settings (the pin).
+- **"New list" tile**: clicking opens a small form — name, color, icon — and on Create opens
+  the new, empty list. Dropping a task on the tile opens the same form and moves the task
+  into the new list. Names that collide with an existing list (ignoring spaces and case)
+  are refused. The task modal's "New list…" option is unchanged: a list made there is
+  derived from the task only, not kept.
+- **Deleting a list** also stops keeping it (its style — color and icon — stays). A list with
+  no items is deleted with a plain "Delete list" confirmation.
 - **Untagged items belong to the default list.** A line with no `+project` tag (e.g. one
   added by another todo.txt tool or a text editor) is shown and counted in the default
   list, alongside items tagged with it. This is a display rule: the line is not rewritten

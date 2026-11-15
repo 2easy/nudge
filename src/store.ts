@@ -8,6 +8,7 @@ import {
 	foldTagsInText,
 	isPurgeable,
 	humanizeTag,
+	normalizeListName,
 	parseTask,
 	replaceProject,
 	serializeTask,
@@ -394,11 +395,20 @@ export class TodoStore {
 }
 
 // Lists are derived by scanning every +project tag; a list survives as long as
-// it has at least one line (completed or not). Sorted alphabetically.
-export function deriveLists(tasks: RenderTask[]): string[] {
+// it has at least one line (completed or not). `kept` adds lists made in
+// Nudge that may have no lines yet; one matching a tag (ignoring spaces and
+// case) is shown under the tag's spelling. Sorted alphabetically.
+export function deriveLists(tasks: RenderTask[], kept: string[] = []): string[] {
 	const set = new Set<string>();
 	for (const { task } of tasks) {
 		for (const p of task.projects) set.add(p);
+	}
+	const keys = new Set(Array.from(set, normalizeListName));
+	for (const name of kept) {
+		const key = normalizeListName(name);
+		if (!key || keys.has(key)) continue;
+		keys.add(key);
+		set.add(name);
 	}
 	return Array.from(set).sort((a, b) => a.localeCompare(b));
 }

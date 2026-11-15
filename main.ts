@@ -6,7 +6,7 @@ import {
 	TAbstractFile,
 	WorkspaceLeaf,
 } from "obsidian";
-import { TodoStore, deriveLists, deriveTags } from "./src/store";
+import { RenderTask, TodoStore, deriveLists, deriveTags } from "./src/store";
 import { DEFAULT_SETTINGS, TodoSettings, TodoSettingTab } from "./src/settings";
 import { TodoView, VIEW_TYPE_TODO } from "./src/view";
 import { TaskModal } from "./src/modal";
@@ -201,7 +201,7 @@ export default class NudgePlugin extends Plugin {
 		const wantsModal = !!params.modal || text.length === 0;
 		if (wantsModal) {
 			const tasksOnDisk = await this.store.readTasks();
-			const lists = deriveLists(tasksOnDisk);
+			const lists = this.deriveLists(tasksOnDisk);
 			const tags = deriveTags(tasksOnDisk);
 			new TaskModal(this.app, lists, tags, null, list, async (task) => {
 				await this.store.addTask(task);
@@ -243,7 +243,7 @@ export default class NudgePlugin extends Plugin {
 	// selection when it's a real project list.
 	async newTask(): Promise<void> {
 		const tasks = await this.store.readTasks();
-		const lists = deriveLists(tasks);
+		const lists = this.deriveLists(tasks);
 		const tags = deriveTags(tasks);
 		// Preset to the focused view's selected project, else the default list.
 		let preset: string | null = null;
@@ -258,6 +258,15 @@ export default class NudgePlugin extends Plugin {
 			await this.store.addTask(task);
 			this.refreshViews();
 		}).open();
+	}
+
+	// Every list to show: those tagged on tasks plus the ones kept in
+	// settings (made with the "New list" tile), which may have no tasks yet.
+	deriveLists(tasks: RenderTask[]): string[] {
+		const kept = this.settings.listStyles
+			.filter((s) => s.keep && s.name)
+			.map((s) => s.name);
+		return deriveLists(tasks, kept);
 	}
 
 	refreshViews(): void {

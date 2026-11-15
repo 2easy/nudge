@@ -1,6 +1,7 @@
 // Structured create/edit modal. Users never type todo.txt syntax directly.
 
 import { App, Modal, Setting } from "obsidian";
+import { IconPickerModal } from "./iconPicker";
 import {
 	humanizeProject,
 	normalizeListName,
@@ -59,8 +60,6 @@ export class TaskModal extends Modal {
 
 	private recContainer!: HTMLElement;
 	private newListSetting!: Setting;
-	private newListInput?: HTMLInputElement;
-	private startInNewList: boolean;
 	// For a task in several lists: the one the List dropdown stands for. The
 	// others are kept untouched on save. null for new or untagged tasks.
 	private primaryList: string | null;
@@ -73,7 +72,6 @@ export class TaskModal extends Modal {
 		defaultList: string | null,
 		onSubmit: (task: Task) => void | Promise<void>,
 		prefill?: Partial<Task>,
-		startInNewList = false,
 		// The list the task was opened from, so that list is the one edited
 		// when the task belongs to several.
 		editList: string | null = null
@@ -83,7 +81,6 @@ export class TaskModal extends Modal {
 		this.tags = tags;
 		this.existing = existing;
 		this.onSubmit = onSubmit;
-		this.startInNewList = startInNewList;
 
 		// `prefill` seeds a *new* item's fields (e.g. from an Obsidian URI); it
 		// does not switch the modal into edit mode the way `existing` does.
@@ -112,13 +109,6 @@ export class TaskModal extends Modal {
 					? firstProject // preserve even if not yet in derived lists
 					: lists[0] ?? NEW_LIST;
 		if (this.listChoice === NEW_LIST) this.newListName = "";
-
-		// Force the "New list…" branch when opened via the new-list affordance,
-		// regardless of any existing/prefilled project.
-		if (startInNewList) {
-			this.listChoice = NEW_LIST;
-			this.newListName = "";
-		}
 	}
 
 	onOpen(): void {
@@ -179,13 +169,12 @@ export class TaskModal extends Modal {
 
 		this.newListSetting = new Setting(contentEl)
 			.setName("New list name")
-			.addText((t) => {
-				this.newListInput = t.inputEl;
+			.addText((t) =>
 				t
 					.setValue(this.newListName)
 					.setPlaceholder("List name")
-					.onChange((v) => (this.newListName = v.replace(/\s+/g, "")));
-			});
+					.onChange((v) => (this.newListName = v.replace(/\s+/g, "")))
+			);
 		this.newListSetting.settingEl.toggle(this.listChoice === NEW_LIST);
 
 		new Setting(contentEl).setName("Due date").addText((t) => {
@@ -246,12 +235,6 @@ export class TaskModal extends Modal {
 			e.preventDefault();
 			this.submit();
 		});
-
-		// Opened via the new-list affordance: drop the cursor straight into the
-		// list-name field.
-		if (this.startInNewList) {
-			window.setTimeout(() => this.newListInput?.focus(), 0);
-		}
 	}
 
 	private renderRecControls(): void {
@@ -483,12 +466,113 @@ export class RenameListModal extends Modal {
 	}
 }
 
-// Confirmation for deleting a list, with three choices. Cancel is the default;
+// "New list" tile: name a list and optionally give it a color and icon. The
+// list is kept in settings, so it shows in the sidebar before it has any
+// tasks. Blocks on a case/space-insensitive collision with an existing list.
+export class NewListModal extends Modal {
+	private name = "";
+	private color = ""; // "" leaves the list uncolored
+	private icon = ""; // "" keeps the default list icon
+
+	constructor(
+		app: App,
+		private lists: string[],
+		private onCreate: (
+			name: string,
+			color: string,
+			icon: string
+		) => void | Promise<void>
+	) {
+		super(app);
+	}
+
+	onOpen(): void {
+		const { contentEl } = this;
+		contentEl.empty();
+		contentEl.createEl("h2", { text: "New list" });
+
+		let inputEl!: HTMLInputElement;
+		new Setting(contentEl).setName("Name").addText((t) => {
+			inputEl = t.inputEl;
+			t.setPlaceholder("List name").onChange((v) => (this.name = v));
+		});
+
+		new Setting(contentEl)
+			.setName("Color")
+			.addColorPicker((c) =>
+				c.setValue("#888888").onChange((v) => (this.color = v))
+			);
+
+		new Setting(contentEl).setName("Icon").addButton((b) => {
+			const show = (icon: string) => {
+				// setIcon appends; clear first so picks don't stack.
+				b.buttonEl.empty();
+				b.setIcon(icon).setTooltip(`Icon: ${icon} — click to change`);
+			};
+			show("list");
+			b.onClick(() => {
+				new IconPickerModal(this.app, (icon) => {
+					this.icon = icon;
+					show(icon);
+				}).open();
+			});
+		});
+
+		new Setting(contentEl)
+			.addButton((b) =>
+				b
+					.setButtonText("Create")
+					.setCta()
+					.onClick(() => this.submit())
+			)
+			.addButton((b) => b.setButtonText("Cancel").onClick(() => this.close()));
+
+		contentEl.addEventListener("keydown", (e) => {
+			if (e.key !== "Enter" || e.isComposing) return;
+			if (e.target instanceof HTMLButtonElement) return; // its own click
+			e.preventDefault();
+			this.submit();
+		});
+
+		window.setTimeout(() => inputEl.focus(), 0);
+	}
+
+	private submit(): void {
+		const name = this.name.replace(/\s+/g, "");
+		if (!name) {
+			this.flash("Name is required.");
+			return;
+		}
+		const key = normalizeListName(name);
+		if (this.lists.some((l) => normalizeListName(l) === key)) {
+			this.flash(`A list named "${humanizeProject(name)}" already exists.`);
+			return;
+		}
+		void this.onCreate(name, this.color, this.icon);
+		this.close();
+	}
+
+	private flash(msg: string): void {
+		let el = this.contentEl.querySelector<HTMLElement>(".todo-modal-error");
+		if (!el) {
+			el = this.contentEl.createDiv({ cls: "todo-modal-error" });
+		}
+		el.setText(msg);
+	}
+
+	onClose(): void {
+		this.contentEl.empty();
+	}
+}
+
+// Confirmation for deleting a list, with three choices (two when the list has
+// no tasks, where there is nothing to keep or delete but the list itself). Cancel is the default;
 // Enter and Esc both cancel and close.
 export class DeleteListModal extends Modal {
 	constructor(
 		app: App,
 		private listName: string,
+		private empty: boolean,
 		private onRemoveTag: () => void | Promise<void>,
 		private onDeleteAll: () => void | Promise<void>
 	) {
@@ -503,7 +587,9 @@ export class DeleteListModal extends Modal {
 		});
 		contentEl.createEl("p", {
 			cls: "setting-item-description",
-			text: "This can't be undone in-app — rely on Obsidian's file history to recover.",
+			text: this.empty
+				? "It has no tasks."
+				: "This can't be undone in-app — rely on Obsidian's file history to recover.",
 		});
 
 		const row = new Setting(contentEl);
@@ -512,20 +598,21 @@ export class DeleteListModal extends Modal {
 			b.setButtonText("Cancel").onClick(() => this.close());
 			cancelBtn = b.buttonEl;
 		});
-		row.addButton((b) => {
-			b.setButtonText("Remove tag from items").onClick(async () => {
-				await this.onRemoveTag();
-				this.close();
+		const actions: [string, () => void | Promise<void>][] = this.empty
+			? [["Delete list", this.onRemoveTag]]
+			: [
+					["Remove tag from items", this.onRemoveTag],
+					["Delete all items", this.onDeleteAll],
+				];
+		for (const [label, run] of actions) {
+			row.addButton((b) => {
+				b.setButtonText(label).onClick(async () => {
+					await run();
+					this.close();
+				});
+				b.buttonEl.addClass("mod-warning");
 			});
-			b.buttonEl.addClass("mod-warning");
-		});
-		row.addButton((b) => {
-			b.setButtonText("Delete all items").onClick(async () => {
-				await this.onDeleteAll();
-				this.close();
-			});
-			b.buttonEl.addClass("mod-warning");
-		});
+		}
 
 		// Enter cancels too (Esc already closes the modal by default).
 		contentEl.addEventListener(

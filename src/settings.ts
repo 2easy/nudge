@@ -18,6 +18,9 @@ export interface ListStyle {
 	name: string;
 	color: string; // hex, e.g. "#4caf50"
 	icon: string; // an icon id (see getIconIds())
+	// Shown in the sidebar even with no tasks, until the list is deleted.
+	// Set for lists made with the "New list" tile.
+	keep?: boolean;
 }
 
 export interface TodoSettings {
@@ -261,7 +264,7 @@ export class TodoSettingTab extends PluginSettingTab {
 		new Setting(containerEl)
 			.setName("List styles")
 			.setDesc(
-				'Give a list a custom color and icon. Matched by name ignoring spaces and case (e.g. "Home Chores" matches HomeChores).'
+				'Give a list a custom color and icon. Matched by name ignoring spaces and case (e.g. "Home Chores" matches HomeChores). The pin keeps a list in the sidebar even when it has no tasks.'
 			)
 			.setHeading();
 
@@ -301,6 +304,25 @@ export class TodoSettingTab extends PluginSettingTab {
 							this.plugin.refreshViews();
 						})();
 					}).open();
+				});
+			});
+			row.addExtraButton((b) => {
+				const show = () => {
+					b.extraSettingsEl.empty();
+					b.setIcon(style.keep ? "pin" : "pin-off").setTooltip(
+						style.keep
+							? "Kept in the sidebar even with no tasks — click to stop"
+							: "Shown only while it has tasks — click to keep in the sidebar"
+					);
+				};
+				show();
+				b.onClick(() => {
+					style.keep = !style.keep;
+					show();
+					void (async () => {
+						await this.plugin.saveSettings();
+						this.plugin.refreshViews();
+					})();
 				});
 			});
 			row.addExtraButton((b) =>

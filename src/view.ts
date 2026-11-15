@@ -8,7 +8,7 @@ import {
 	setIcon,
 } from "obsidian";
 import type NudgePlugin from "../main";
-import { RenderTask, TagInfo, deriveLists, deriveTags } from "./store";
+import { RenderTask, TagInfo, deriveTags } from "./store";
 import {
 	addDays,
 	asciiFold,
@@ -38,6 +38,7 @@ import {
 	ConfirmPasteModal,
 	TaskModal,
 	DeleteListModal,
+	NewListModal,
 	RenameListModal,
 } from "./modal";
 import { matchHotkey } from "./hotkey";
@@ -321,7 +322,7 @@ export class TodoView extends ItemView {
 			const tasks = await this.plugin.store.readTasks();
 			new TaskModal(
 				this.app,
-				deriveLists(tasks),
+				this.plugin.deriveLists(tasks),
 				deriveTags(tasks),
 				null,
 				project,
@@ -531,7 +532,7 @@ export class TodoView extends ItemView {
 		}
 		const today = todayStr();
 		const defaultList = this.plugin.settings.defaultList;
-		const lists = deriveLists(tasks);
+		const lists = this.plugin.deriveLists(tasks);
 		const tags = deriveTags(tasks);
 
 		// Upcoming can be hidden in settings; don't stay on a view with no
@@ -690,17 +691,16 @@ export class TodoView extends ItemView {
 		return el;
 	}
 
-	// Bottom-of-rail affordance for creating a list. Since lists are purely
-	// derived from +project tags, a new list is born by seeding it with a real
-	// item: clicking opens the create modal on "New list…"; dropping an existing
-	// task opens its edit modal on "New list…" to reassign it.
+	// Bottom-of-rail affordance for creating a list. Clicking names an empty
+	// list (kept in settings until it's deleted) and opens it; dropping an
+	// existing task names one and moves the task into it.
 	private newListTile(): HTMLElement {
 		const el = createDiv({ cls: "todo-rail-item todo-rail-newlist" });
 		const ic = el.createSpan({ cls: "todo-rail-icon" });
 		setIcon(ic, "folder-plus");
 		el.createSpan({ cls: "todo-rail-label", text: "New list" });
 
-		el.addEventListener("click", () => void this.openCreateNewList());
+		el.addEventListener("click", () => void this.openNewList(null));
 
 		el.addEventListener("dragover", (e) => {
 			if (this.drag) {
@@ -715,7 +715,7 @@ export class TodoView extends ItemView {
 			const d = this.drag;
 			this.drag = null;
 			if (!d) return;
-			void this.openEditNewList(d.raw, d.index);
+			void this.openNewList(d);
 		});
 
 		return el;
@@ -974,7 +974,7 @@ export class TodoView extends ItemView {
 		// Rename-list icon (project lists only; filter views can't be renamed).
 		if (!isFilterView) {
 			const list = this.selected;
-			const lists = deriveLists(tasks);
+			const lists = this.plugin.deriveLists(tasks);
 			const rename = left.createSpan({ cls: "todo-edit-list" });
 			setIcon(rename, "pencil");
 			rename.setAttr("aria-label", "Rename list");
@@ -1066,15 +1066,20 @@ export class TodoView extends ItemView {
 			const del = left.createSpan({ cls: "todo-trash" });
 			setIcon(del, "trash-2");
 			del.setAttr("aria-label", "Delete list");
+			const defaultList = this.plugin.settings.defaultList;
+			const empty = !tasks.some((rt) => inList(rt.task, list, defaultList));
 			del.addEventListener("click", () => {
 				new DeleteListModal(
 					this.app,
 					list,
+					empty,
 					async () => {
+						await this.forgetList(list);
 						await this.plugin.store.removeProjectTag(list);
 						await this.refresh();
 					},
 					async () => {
+						await this.forgetList(list);
 						await this.plugin.store.deleteListItems(
 							list,
 							list === this.plugin.settings.defaultList
@@ -1328,7 +1333,7 @@ export class TodoView extends ItemView {
 		const tasks = await this.plugin.store.readTasks();
 		new TaskModal(
 			this.app,
-			deriveLists(tasks),
+			this.plugin.deriveLists(tasks),
 			deriveTags(tasks),
 			null,
 			this.newTaskProject(),
@@ -1848,71 +1853,71 @@ export class TodoView extends ItemView {
 		// must already point at `newName` too, or the "list no longer exists"
 		// fallback (refresh()'s guard against a deleted selection) trips and
 		// resets selected to Today before we get a chance to update it here.
+		// The settings go first for the same reason: a kept list may have no
+		// tagged lines, and then only its style says the new name exists.
 		if (this.todayFilterList === oldName) this.todayFilterList = newName;
 		if (this.selected === oldName) this.selected = newName;
 
-		await this.plugin.store.renameProjectTag(oldName, newName);
-
-		const key = normalizeListName(oldName);
-		const style = this.plugin.settings.listStyles.find(
-			(s) => s.name && normalizeListName(s.name) === key
-		);
+		const style = this.styleFor(oldName);
 		if (style) style.name = newName;
 		if (this.plugin.settings.defaultList === oldName) {
 			this.plugin.settings.defaultList = newName;
 		}
 		await this.plugin.saveSettings();
 
+		await this.plugin.store.renameProjectTag(oldName, newName);
+
 		await this.refresh();
 	}
 
-	// New-list tile, click path: create a brand-new task with the modal opened
-	// on "New list…" and the name field focused.
-	private async openCreateNewList(): Promise<void> {
+	// New-list tile: name the list, then keep it in settings so it shows
+	// before it has any tasks. Its color and icon land on the list's style
+	// (made here unless one already matches the name). A click opens the new
+	// list; a drop moves the dragged task into it instead.
+	private async openNewList(moved: DragState | null): Promise<void> {
+		// The list the task was dragged out of, captured before the modal.
+		const from =
+			moved && !this.searching() ? this.getSelectedList() : null;
 		const tasks = await this.plugin.store.readTasks();
-		const lists = deriveLists(tasks);
-		const tags = deriveTags(tasks);
-		new TaskModal(
-			this.app,
-			lists,
-			tags,
-			null,
-			null,
-			async (task) => {
-				await this.plugin.store.addTask(task);
-				await this.refresh();
-			},
-			undefined,
-			true
-		).open();
+		const lists = this.plugin.deriveLists(tasks);
+		const defaultList = this.plugin.settings.defaultList;
+		if (defaultList) lists.push(defaultList);
+		new NewListModal(this.app, lists, async (name, color, icon) => {
+			let style = this.styleFor(name);
+			if (!style) {
+				style = { name, color: "", icon: "" };
+				this.plugin.settings.listStyles.push(style);
+			}
+			style.name = name;
+			style.keep = true;
+			if (color) style.color = color;
+			if (icon) style.icon = icon;
+			await this.plugin.saveSettings();
+
+			if (moved) {
+				await this.plugin.store.setProject(moved.raw, moved.index, name, from);
+			} else {
+				this.closeSearch();
+				this.selected = name;
+				this.adding = false;
+				this.editing = null;
+			}
+			await this.refresh();
+		}).open();
 	}
 
-	// New-list tile, drop path: reassign the dropped task by opening its edit
-	// modal on "New list…" so the user names the destination list.
-	private async openEditNewList(raw: string, index: number): Promise<void> {
-		const tasks = await this.plugin.store.readTasks();
-		const lists = deriveLists(tasks);
-		const tags = deriveTags(tasks);
-		const task = parseTask(raw);
-		new TaskModal(
-			this.app,
-			lists,
-			tags,
-			task,
-			null,
-			async (updated) => {
-				await this.plugin.store.updateTask(raw, index, updated);
-				await this.refresh();
-			},
-			undefined,
-			true,
-			this.searching() ? null : this.getSelectedList()
-		).open();
+	// Stop keeping a deleted list in the sidebar. Its style stays, so the
+	// color and icon come back if the name is used again.
+	private async forgetList(list: string): Promise<void> {
+		const style = this.styleFor(list);
+		if (!style?.keep) return;
+		delete style.keep;
+		await this.plugin.saveSettings();
 	}
 
 	private async openEdit(rt: RenderTask): Promise<void> {
 		const tasks = await this.plugin.store.readTasks();
-		const lists = deriveLists(tasks);
+		const lists = this.plugin.deriveLists(tasks);
 		const tags = deriveTags(tasks);
 		// The default list is passed so an untagged task shows under its name.
 		const defaultList = this.plugin.settings.defaultList || null;
@@ -1929,7 +1934,6 @@ export class TodoView extends ItemView {
 				await this.refresh();
 			},
 			undefined,
-			false,
 			editList
 		).open();
 	}
