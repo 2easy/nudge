@@ -33,6 +33,9 @@ plugins enabled) already is.
   into the new list. Names that collide with an existing list (ignoring spaces and case)
   are refused. The task modal's "New list…" option is unchanged: a list made there is
   derived from the task only, not kept.
+- **Editing a list**: the pencil in a list's header opens the same form, prefilled with its
+  name, color and icon. A new name rewrites the `+project` tag on every item; a color or
+  icon picked there is saved on the list's style, as in settings.
 - **Deleting a list** also stops keeping it (its style — color and icon — stays). A list with
   no items is deleted with a plain "Delete list" confirmation.
 - **Untagged items belong to the default list.** A line with no `+project` tag (e.g. one

@@ -13,7 +13,8 @@ See [SPEC.md](./SPEC.md) for the full design.
 
 - Custom view with a **Today** filter plus one list per `+project` tag.
 - **New list** in the sidebar creates an empty list with its own name, color and icon;
-  Nudge remembers it until it's deleted, even before it has any tasks.
+  Nudge remembers it until it's deleted, even before it has any tasks. The pencil in a
+  list's header edits its name, color and icon the same way.
 - An **Upcoming** view of tasks due in the next 7, 14 or 30 days (or any future date),
   grouped by day.
 - A configurable **Default list** (default `Inbox`), always pinned under Today.

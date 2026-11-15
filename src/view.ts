@@ -38,8 +38,8 @@ import {
 	ConfirmPasteModal,
 	TaskModal,
 	DeleteListModal,
-	NewListModal,
-	RenameListModal,
+	ListAppearance,
+	ListModal,
 } from "./modal";
 import { matchHotkey } from "./hotkey";
 import { attachTagSuggest, TagSuggestHandle } from "./tagSuggest";
@@ -971,16 +971,22 @@ export class TodoView extends ItemView {
 						: humanizeProject(this.selected),
 		});
 
-		// Rename-list icon (project lists only; filter views can't be renamed).
+		// Edit-list icon: name, color and icon (project lists only; filter
+		// views can't be edited).
 		if (!isFilterView) {
 			const list = this.selected;
-			const lists = this.plugin.deriveLists(tasks);
-			const rename = left.createSpan({ cls: "todo-edit-list" });
-			setIcon(rename, "pencil");
-			rename.setAttr("aria-label", "Rename list");
-			rename.addEventListener("click", () => {
-				new RenameListModal(this.app, list, lists, (newName) =>
-					this.renameList(list, newName)
+			const lists = this.listNames(tasks);
+			const current = {
+				name: list,
+				color: st?.color ?? "",
+				icon: st?.icon || defaultIcon,
+			};
+			const edit = left.createSpan({ cls: "todo-edit-list" });
+			setIcon(edit, "pencil");
+			edit.setAttr("aria-label", "Edit list");
+			edit.addEventListener("click", () => {
+				new ListModal(this.app, lists, current, (edited) =>
+					this.editList(list, edited)
 				).open();
 			});
 		}
@@ -1870,28 +1876,28 @@ export class TodoView extends ItemView {
 		await this.refresh();
 	}
 
+	// Header pencil: apply a newly picked color or icon, then rename the
+	// list if its name changed (which carries the style over).
+	private async editList(list: string, edited: ListAppearance): Promise<void> {
+		if (edited.color || edited.icon) {
+			this.styleList({ ...edited, name: list });
+			await this.plugin.saveSettings();
+		}
+		if (edited.name !== list) await this.renameList(list, edited.name);
+		else await this.refresh();
+	}
+
 	// New-list tile: name the list, then keep it in settings so it shows
-	// before it has any tasks. Its color and icon land on the list's style
-	// (made here unless one already matches the name). A click opens the new
-	// list; a drop moves the dragged task into it instead.
+	// before it has any tasks. A click opens the new list; a drop moves the
+	// dragged task into it instead.
 	private async openNewList(moved: DragState | null): Promise<void> {
 		// The list the task was dragged out of, captured before the modal.
 		const from =
 			moved && !this.searching() ? this.getSelectedList() : null;
 		const tasks = await this.plugin.store.readTasks();
-		const lists = this.plugin.deriveLists(tasks);
-		const defaultList = this.plugin.settings.defaultList;
-		if (defaultList) lists.push(defaultList);
-		new NewListModal(this.app, lists, async (name, color, icon) => {
-			let style = this.styleFor(name);
-			if (!style) {
-				style = { name, color: "", icon: "" };
-				this.plugin.settings.listStyles.push(style);
-			}
-			style.name = name;
-			style.keep = true;
-			if (color) style.color = color;
-			if (icon) style.icon = icon;
+		new ListModal(this.app, this.listNames(tasks), null, async (list) => {
+			const { name } = list;
+			this.styleList(list).keep = true;
 			await this.plugin.saveSettings();
 
 			if (moved) {
@@ -1904,6 +1910,29 @@ export class TodoView extends ItemView {
 			}
 			await this.refresh();
 		}).open();
+	}
+
+	// Every list name a new or renamed list must not collide with, the
+	// default list included even when it has no tasks.
+	private listNames(tasks: RenderTask[]): string[] {
+		const lists = this.plugin.deriveLists(tasks);
+		const defaultList = this.plugin.settings.defaultList;
+		if (defaultList) lists.push(defaultList);
+		return lists;
+	}
+
+	// Save a picked color and icon on the list's style, made here unless one
+	// already matches the name. Not saved to disk.
+	private styleList({ name, color, icon }: ListAppearance): ListStyle {
+		let style = this.styleFor(name);
+		if (!style) {
+			style = { name, color: "", icon: "" };
+			this.plugin.settings.listStyles.push(style);
+		}
+		style.name = name;
+		if (color) style.color = color;
+		if (icon) style.icon = icon;
+		return style;
 	}
 
 	// Stop keeping a deleted list in the sidebar. Its style stays, so the

@@ -379,27 +379,41 @@ export class ConfirmPasteModal extends Modal {
 	}
 }
 
-// Rename a list: rewrites its +project tag on every item (completed and
-// incomplete). Blocks on a case/space-insensitive collision with a
-// *different* existing list; a pure re-casing of the same list (e.g.
-// "chores" -> "Chores") is allowed since it's excluded from that check.
-export class RenameListModal extends Modal {
+// A list's name and look, as the list form shows and returns them. Out of the
+// form, color and icon are "" when left untouched: no color and the default
+// icon for a new list, unchanged for an edited one.
+export interface ListAppearance {
+	name: string;
+	color: string;
+	icon: string;
+}
+
+// Create or edit a list: name, color and icon. Editing renames the list when
+// the name changes, rewriting its +project tag on every item. Blocks on a
+// case/space-insensitive collision with a *different* existing list; a pure
+// re-casing of the same list (e.g. "chores" -> "Chores") is allowed since
+// it's excluded from that check.
+export class ListModal extends Modal {
 	private name: string;
+	private color = "";
+	private icon = "";
 
 	constructor(
 		app: App,
-		private listName: string,
 		private lists: string[],
-		private onRename: (newName: string) => void | Promise<void>
+		// The list being edited, with its current color ("" for none) and
+		// shown icon; null to create one.
+		private current: ListAppearance | null,
+		private onSubmit: (list: ListAppearance) => void | Promise<void>
 	) {
 		super(app);
-		this.name = humanizeProject(listName);
+		this.name = current ? humanizeProject(current.name) : "";
 	}
 
 	onOpen(): void {
 		const { contentEl } = this;
 		contentEl.empty();
-		contentEl.createEl("h2", { text: "Rename list" });
+		contentEl.createEl("h2", { text: this.current ? "Edit list" : "New list" });
 
 		let inputEl!: HTMLInputElement;
 		new Setting(contentEl).setName("Name").addText((t) => {
@@ -411,96 +425,11 @@ export class RenameListModal extends Modal {
 		});
 
 		new Setting(contentEl)
-			.addButton((b) =>
-				b
-					.setButtonText("Save")
-					.setCta()
-					.onClick(() => this.submit())
-			)
-			.addButton((b) => b.setButtonText("Cancel").onClick(() => this.close()));
-
-		contentEl.addEventListener("keydown", (e) => {
-			if (e.key !== "Enter" || e.isComposing) return;
-			e.preventDefault();
-			this.submit();
-		});
-
-		window.setTimeout(() => {
-			inputEl.focus();
-			inputEl.select();
-		}, 0);
-	}
-
-	private submit(): void {
-		const newName = this.name.replace(/\s+/g, "");
-		if (!newName) {
-			this.flash("Name is required.");
-			return;
-		}
-		if (newName === this.listName) {
-			this.close();
-			return;
-		}
-		const key = normalizeListName(newName);
-		const collides = this.lists.some(
-			(l) => l !== this.listName && normalizeListName(l) === key
-		);
-		if (collides) {
-			this.flash(`A list named "${humanizeProject(newName)}" already exists.`);
-			return;
-		}
-		void this.onRename(newName);
-		this.close();
-	}
-
-	private flash(msg: string): void {
-		let el = this.contentEl.querySelector<HTMLElement>(".todo-modal-error");
-		if (!el) {
-			el = this.contentEl.createDiv({ cls: "todo-modal-error" });
-		}
-		el.setText(msg);
-	}
-
-	onClose(): void {
-		this.contentEl.empty();
-	}
-}
-
-// "New list" tile: name a list and optionally give it a color and icon. The
-// list is kept in settings, so it shows in the sidebar before it has any
-// tasks. Blocks on a case/space-insensitive collision with an existing list.
-export class NewListModal extends Modal {
-	private name = "";
-	private color = ""; // "" leaves the list uncolored
-	private icon = ""; // "" keeps the default list icon
-
-	constructor(
-		app: App,
-		private lists: string[],
-		private onCreate: (
-			name: string,
-			color: string,
-			icon: string
-		) => void | Promise<void>
-	) {
-		super(app);
-	}
-
-	onOpen(): void {
-		const { contentEl } = this;
-		contentEl.empty();
-		contentEl.createEl("h2", { text: "New list" });
-
-		let inputEl!: HTMLInputElement;
-		new Setting(contentEl).setName("Name").addText((t) => {
-			inputEl = t.inputEl;
-			t.setPlaceholder("List name").onChange((v) => (this.name = v));
-		});
-
-		new Setting(contentEl)
 			.setName("Color")
 			.addColorPicker((c) =>
-				c.setValue("#888888").onChange((v) => (this.color = v))
+				c
+					.setValue(this.current?.color || "#888888")
+					.onChange((v) => (this.color = v))
 			);
 
 		new Setting(contentEl).setName("Icon").addButton((b) => {
@@ -509,7 +438,7 @@ export class NewListModal extends Modal {
 				b.buttonEl.empty();
 				b.setIcon(icon).setTooltip(`Icon: ${icon} — click to change`);
 			};
-			show("list");
+			show(this.current?.icon || "list");
 			b.onClick(() => {
 				new IconPickerModal(this.app, (icon) => {
 					this.icon = icon;
@@ -521,7 +450,7 @@ export class NewListModal extends Modal {
 		new Setting(contentEl)
 			.addButton((b) =>
 				b
-					.setButtonText("Create")
+					.setButtonText(this.current ? "Save" : "Create")
 					.setCta()
 					.onClick(() => this.submit())
 			)
@@ -534,7 +463,10 @@ export class NewListModal extends Modal {
 			this.submit();
 		});
 
-		window.setTimeout(() => inputEl.focus(), 0);
+		window.setTimeout(() => {
+			inputEl.focus();
+			inputEl.select();
+		}, 0);
 	}
 
 	private submit(): void {
@@ -543,12 +475,17 @@ export class NewListModal extends Modal {
 			this.flash("Name is required.");
 			return;
 		}
+		const old = this.current?.name;
+		if (name === old && !this.color && !this.icon) {
+			this.close();
+			return;
+		}
 		const key = normalizeListName(name);
-		if (this.lists.some((l) => normalizeListName(l) === key)) {
+		if (this.lists.some((l) => l !== old && normalizeListName(l) === key)) {
 			this.flash(`A list named "${humanizeProject(name)}" already exists.`);
 			return;
 		}
-		void this.onCreate(name, this.color, this.icon);
+		void this.onSubmit({ name, color: this.color, icon: this.icon });
 		this.close();
 	}
 
@@ -566,8 +503,8 @@ export class NewListModal extends Modal {
 }
 
 // Confirmation for deleting a list, with three choices (two when the list has
-// no tasks, where there is nothing to keep or delete but the list itself). Cancel is the default;
-// Enter and Esc both cancel and close.
+// no tasks, where there is nothing to keep or delete but the list itself).
+// Cancel is the default; Enter and Esc both cancel and close.
 export class DeleteListModal extends Modal {
 	constructor(
 		app: App,
